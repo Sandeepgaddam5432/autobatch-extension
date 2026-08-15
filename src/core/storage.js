@@ -1,15 +1,32 @@
-export const DEFAULTS = {
-	// generation
-	mode: "t2i",
-	aspectRatio: "1:1",
-	outputsPerPrompt: 1,
+export const ASPECT_RATIOS = [
+	{ value: "16:9", label: "16:9 (YouTube)" },
+	{ value: "9:16", label: "9:16 (Shorts/Reels)" },
+	{ value: "1:1", label: "1:1 (Square)" },
+	{ value: "2:3", label: "2:3 (Portrait)" },
+	{ value: "3:2", label: "3:2 (Landscape)" },
+]
 
-	// pacing
+export const MODES = [
+	{ value: "t2v", label: "Text to Video", needsImages: false },
+	{ value: "f2v", label: "Frame to Video", needsImages: true },
+	{ value: "ing2v", label: "Ingredients to Video", needsImages: true },
+	{ value: "t2i", label: "Text to Image", needsImages: false },
+	{ value: "i2i", label: "Image to Image", needsImages: true },
+]
+
+export const DEFAULTS = {
+	// control tab
+	mode: "t2v",
 	concurrency: 1,
-	delayMinMs: 6000,
-	delayMaxMs: 9000,
-	maxRetries: 2,
-	timeoutMs: 300000,
+	delayMinSec: 0,
+	delayMaxSec: 10,
+	outputsPerPrompt: 1,
+	folder: "unq-folder-1",
+	autoRenameFiles: true,
+	autoAddCharacterImages: false,
+	maxInputImages: 1,
+	frameOption: "startOnly", // startOnly | startAndEnd
+	imageMatchMode: "oneToOne",
 
 	// prompt shaping
 	prefix: "",
@@ -19,34 +36,34 @@ export const DEFAULTS = {
 	shuffle: false,
 	dedupe: true,
 
-	// image pairing (image-to-* modes)
-	imageMatchMode: "oneToOne", // oneToOne | oneImageAllPrompts | allImagesEachPrompt | firstLastFrame
+	// settings tab
+	defaultMode: "t2v",
+	aspectRatio: "16:9",
+	videoOption: "5s", // 5s | 5s-concat
+	imageModeOption: "new", // new | last
+	maxRetries: 5,
+	downloadQualityVideo: "720p", // none | 720p | 1080p | 4k
+	downloadQualityImage: "1k", // none | 1k | 4k
+	locale: "auto",
+	theme: "dark",
 
-	// downloads
+	// engine
+	timeoutMs: 300000,
+	stopOnConsecutiveFailures: 5,
 	autoDownload: true,
-	downloadQuality: "best", // best | 1080p | 720p | gif
-	folder: "UnQ",
-	folderPerDate: false,
-	folderPerRun: false,
+	skipDuplicates: true,
 	filenameTemplate: "{n}_{slug}",
 	startIndex: 1,
-	skipDuplicates: true,
-
-	// scheduling / limits
+	folderPerDate: false,
+	folderPerRun: false,
 	scheduleEnabled: false,
 	windowStart: "00:00",
 	windowEnd: "23:59",
-	dailyLimit: 0, // 0 = unlimited
-
-	// runtime behavior
-	keepAwake: true, // survive background-tab throttling
+	dailyLimit: 0,
+	keepAwake: true,
 	notifyOnFinish: true,
-	stopOnConsecutiveFailures: 5,
-
-	// app
-	theme: "dark",
-	locale: "auto",
 	selectorConfigUrl: "",
+	autoDetectSelectors: true,
 	lastPrompts: "",
 }
 
@@ -57,18 +74,25 @@ const QUEUE = "unq.queue"
 
 export async function getSettings() {
 	const stored = await chrome.storage.local.get(KEY)
-	return { ...DEFAULTS, ...(stored[KEY] || {}) }
+	const settings = { ...DEFAULTS, ...(stored[KEY] || {}) }
+	// engine still speaks milliseconds; the UI speaks seconds
+	settings.delayMinMs = Math.round((Number(settings.delayMinSec) || 0) * 1000)
+	settings.delayMaxMs = Math.round((Number(settings.delayMaxSec) || 0) * 1000)
+	return settings
 }
 
 export async function setSettings(patch) {
-	const next = { ...(await getSettings()), ...patch }
+	const current = await getSettings()
+	const next = { ...current, ...patch }
+	delete next.delayMinMs
+	delete next.delayMaxMs
 	await chrome.storage.local.set({ [KEY]: next })
-	return next
+	return await getSettings()
 }
 
 export async function resetSettings() {
 	await chrome.storage.local.set({ [KEY]: { ...DEFAULTS } })
-	return { ...DEFAULTS }
+	return await getSettings()
 }
 
 /* ---------- download counter (guarantees 1,2,3... numbering) ---------- */
@@ -132,7 +156,7 @@ export async function clearLibrary() {
 	await chrome.storage.local.set({ [LIB]: [] })
 }
 
-/* ---------- queue snapshot (resume after reload) ---------- */
+/* ---------- queue snapshot ---------- */
 
 export async function saveQueueSnapshot(snapshot) {
 	await chrome.storage.local.set({ [QUEUE]: snapshot })
@@ -147,11 +171,18 @@ export async function clearQueueSnapshot() {
 	await chrome.storage.local.remove(QUEUE)
 }
 
+/** "Clear Cache": selector cache, counters, queue snapshot, logs. Keeps settings. */
+export async function clearCaches() {
+	await chrome.storage.local.remove(["unq.selectorCache", COUNTER, QUEUE, "unq.logs"])
+}
+
 /* ---------- settings import / export ---------- */
 
 export async function exportConfig() {
 	const settings = await getSettings()
-	return JSON.stringify({ app: "UnQ Automation", version: 2, settings }, null, 2)
+	delete settings.delayMinMs
+	delete settings.delayMaxMs
+	return JSON.stringify({ app: "UnQ Automation", version: 3, settings }, null, 2)
 }
 
 export async function importConfig(json) {

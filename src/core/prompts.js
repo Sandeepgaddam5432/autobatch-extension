@@ -1,22 +1,14 @@
+import { parseXlsx } from "./xlsx.js"
+
 const MAX_EXPANDED = 2000
 
-/** Blank-line separated blocks (the de-facto convention for prompt .txt files). */
+/** Blank-line separated blocks. */
 export function parseTxt(raw) {
 	if (!raw) return []
 	return String(raw)
 		.replace(/\r\n/g, "\n")
 		.split(/\n\s*\n+/)
 		.map((block) => block.trim())
-		.filter(Boolean)
-}
-
-/** One prompt per line. */
-export function parseLines(raw) {
-	if (!raw) return []
-	return String(raw)
-		.replace(/\r\n/g, "\n")
-		.split("\n")
-		.map((line) => line.trim())
 		.filter(Boolean)
 }
 
@@ -48,42 +40,50 @@ function splitCsvLine(line) {
 	return out.map((value) => value.trim())
 }
 
-/**
- * CSV / TSV: first column is the prompt. Optional columns named
- * `image`, `ratio`, `mode`, `outputs` become per-row overrides.
- */
-export function parseCsv(raw) {
-	const lines = String(raw || "")
-		.replace(/\r\n/g, "\n")
-		.split("\n")
-		.filter((line) => line.trim())
-	if (!lines.length) return []
+/** Shared table -> rows logic for CSV, TSV and XLSX. */
+export function rowsFromTable(table) {
+	if (!table.length) return []
+	const header = table[0].map((cell) => String(cell).toLowerCase())
+	const hasHeader = header.includes("prompt")
+	const headers = hasHeader ? header : ["prompt"]
+	const body = hasHeader ? table.slice(1) : table
 
-	const first = splitCsvLine(lines[0]).map((h) => h.toLowerCase())
-	const hasHeader = first.includes("prompt")
-	const headers = hasHeader ? first : ["prompt"]
-	const rows = hasHeader ? lines.slice(1) : lines
-
-	return rows
-		.map((line) => {
-			const cells = splitCsvLine(line)
-			const row = { text: cells[0] }
-			headers.forEach((header, i) => {
-				if (i === 0 || !cells[i]) return
-				if (header === "image") row.image = cells[i]
-				if (header === "ratio") row.aspectRatio = cells[i]
-				if (header === "mode") row.mode = cells[i]
-				if (header === "outputs") row.outputsPerPrompt = Number(cells[i]) || 1
+	return body
+		.map((cells) => {
+			const row = { text: String(cells[0] || "").trim() }
+			headers.forEach((name, i) => {
+				const value = cells[i]
+				if (i === 0 || !value) return
+				if (name === "image") row.image = String(value)
+				if (name === "ratio") row.aspectRatio = String(value)
+				if (name === "mode") row.mode = String(value)
+				if (name === "outputs") row.outputsPerPrompt = Number(value) || 1
 			})
 			return row
 		})
 		.filter((row) => row.text)
 }
 
-export function parseAny(raw, filename = "") {
-	if (/\.(csv|tsv)$/i.test(filename)) return parseCsv(raw)
-	const blocks = parseTxt(raw)
-	return blocks.map((text) => ({ text }))
+export function parseCsv(raw) {
+	const lines = String(raw || "")
+		.replace(/\r\n/g, "\n")
+		.split("\n")
+		.filter((line) => line.trim())
+	return rowsFromTable(lines.map(splitCsvLine))
+}
+
+/** Reads a File object of any supported type. */
+export async function parseFile(file) {
+	if (/\.xlsx$/i.test(file.name)) {
+		return rowsFromTable(await parseXlsx(await file.arrayBuffer()))
+	}
+	const text = await file.text()
+	if (/\.(csv|tsv)$/i.test(file.name)) return parseCsv(text)
+	return parseTxt(text).map((text2) => ({ text: text2 }))
+}
+
+export function parseAny(raw) {
+	return parseTxt(raw).map((text) => ({ text }))
 }
 
 /** {{var}} substitution with cartesian expansion. */
@@ -104,9 +104,7 @@ function expandVariables(text, variables) {
 	for (const key of used) {
 		const next = []
 		for (const partial of results) {
-			for (const value of variables[key]) {
-				next.push(partial.split(`{{${key}}}`).join(value))
-			}
+			for (const value of variables[key]) next.push(partial.split(`{{${key}}}`).join(value))
 		}
 		results = next
 		if (results.length > MAX_EXPANDED) return results.slice(0, MAX_EXPANDED)
@@ -124,10 +122,52 @@ function shuffleInPlace(list) {
 	return list
 }
 
+function baseName(name) {
+	return String(name || "")
+		.replace(/\.[a-z0-9]+$/i, "")
+		.replace(/[_\-]+/g, " ")
+		.trim()
+}
+
 /**
- * Build the final job list: variables -> prefix/suffix -> repeat -> dedupe ->
- * shuffle -> image pairing.
+ * "Auto-add character images": if an uploaded file is named after something
+ * mentioned in the prompt (e.g. `maya.png` + "maya walks into frame"), attach
+ * that image to that prompt automatically.
  */
+export function matchCharacterImages(text, images, limit = 4) {
+	const haystack = String(text).toLowerCase()
+	const hits = []
+	for (const image of images) {
+		const name = baseName(image.name).toLowerCase()
+		if (name.length < 2) continue
+		const parts = name.split(/\s+/).filter((part) => part.length >= 2)
+		const matched = parts.length
+			? parts.every((part) => haystack.includes(part))
+			: haystack.includes(name)
+		if (matched) hits.push(image)
+		if (hits.length >= limit) break
+	}
+	return hits
+}
+
+function pairImages({ row, index, images, mode, imageMatchMode, maxInputImages, frameOption }) {
+	if (!images.length) return []
+	if (mode === "ing2v" || mode === "i2i") {
+		if (imageMatchMode === "oneToOne") return [images[index % images.length]]
+		return images.slice(0, Math.max(1, maxInputImages))
+	}
+	if (mode === "f2v") {
+		if (frameOption === "startAndEnd") {
+			return [images[index % images.length], images[(index + 1) % images.length]].filter(Boolean)
+		}
+		return [images[index % images.length]]
+	}
+	if (imageMatchMode === "oneImageAllPrompts") return [images[0]]
+	if (imageMatchMode === "allImagesEachPrompt") return images.slice(0, Math.max(1, maxInputImages))
+	return [images[index % images.length]]
+}
+
+/** Build the final job list. */
 export function buildJobs({
 	rows,
 	variables = {},
@@ -137,13 +177,15 @@ export function buildJobs({
 	dedupe = true,
 	shuffle = false,
 	images = [],
+	mode = "t2v",
 	imageMatchMode = "oneToOne",
+	maxInputImages = 1,
+	frameOption = "startOnly",
+	autoAddCharacterImages = false,
 }) {
 	let expanded = []
 	for (const row of rows) {
-		for (const text of expandVariables(row.text, variables)) {
-			expanded.push({ ...row, text })
-		}
+		for (const text of expandVariables(row.text, variables)) expanded.push({ ...row, text })
 	}
 
 	expanded = expanded.map((row) => ({
@@ -169,20 +211,23 @@ export function buildJobs({
 
 	if (shuffle) shuffleInPlace(expanded)
 
-	// image pairing
-	if (images.length) {
-		if (imageMatchMode === "oneImageAllPrompts") {
-			expanded = expanded.map((row) => ({ ...row, images: [images[0]] }))
-		} else if (imageMatchMode === "allImagesEachPrompt") {
-			expanded = expanded.map((row) => ({ ...row, images: images.slice() }))
-		} else if (imageMatchMode === "firstLastFrame") {
-			expanded = expanded.map((row, i) => ({
-				...row,
-				images: [images[i % images.length], images[(i + 1) % images.length]].filter(Boolean),
-			}))
-		} else {
-			expanded = expanded.map((row, i) => ({ ...row, images: [images[i % images.length]] }))
-		}
+	const needsImages = ["f2v", "ing2v", "i2i", "i2v"].includes(mode)
+	if (needsImages && images.length) {
+		expanded = expanded.map((row, index) => {
+			let picked = autoAddCharacterImages ? matchCharacterImages(row.text, images, maxInputImages) : []
+			if (!picked.length) {
+				picked = pairImages({
+					row,
+					index,
+					images,
+					mode,
+					imageMatchMode,
+					maxInputImages,
+					frameOption,
+				})
+			}
+			return { ...row, images: picked.filter(Boolean) }
+		})
 	}
 
 	return expanded.slice(0, MAX_EXPANDED).map((row, index) => ({ index, ...row }))
