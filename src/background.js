@@ -1,6 +1,11 @@
 const activeTabs = new Set()
 let offscreenReady = false
 
+// Inline 1x1 PNG: chrome.notifications requires a valid iconUrl and the repo
+// ships no binary assets yet. Replace with icons/icon128.png when added.
+const NOTIFY_ICON =
+	"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=="
+
 async function ensureOffscreen() {
 	if (offscreenReady) return
 	try {
@@ -56,13 +61,17 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
 			return true
 
 		case "UNQ_NOTIFY":
-			chrome.notifications.create({
-				type: "basic",
-				title: message.title || "UnQ Automation",
-				message: message.message || "",
-				iconUrl: "icons/icon128.png",
-				silent: false,
-			})
+			try {
+				chrome.notifications.create({
+					type: "basic",
+					title: message.title || "UnQ Automation",
+					message: message.message || "",
+					iconUrl: NOTIFY_ICON,
+					silent: false,
+				})
+			} catch (err) {
+				/* notifications are best-effort */
+			}
 			reply({ ok: true })
 			return true
 
