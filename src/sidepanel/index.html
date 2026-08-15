@@ -9,7 +9,7 @@
 	<body>
 		<header class="head">
 			<div class="head-top">
-				<h1>UnQ Automation <span class="badge" id="version">v0.3.0</span></h1>
+				<h1>UnQ Automation <span class="badge" id="version">v0.4.0</span></h1>
 				<select id="locale" class="mini" title="Language">
 					<option value="auto">Auto</option>
 					<option value="en">English</option>
@@ -24,10 +24,10 @@
 		</header>
 
 		<nav class="tabs">
-			<button class="tab active" data-tab="control">Control</button>
-			<button class="tab" data-tab="setting">Setting</button>
-			<button class="tab" data-tab="logs">Debug Logs</button>
-			<button class="tab" data-tab="library">Library</button>
+			<button class="tab active" data-tab="control">⚙ Control</button>
+			<button class="tab" data-tab="setting">⚗ Setting</button>
+			<button class="tab" data-tab="logs">◎ Logs</button>
+			<button class="tab" data-tab="library">◫ Library</button>
 		</nav>
 
 		<!-- ============ CONTROL ============ -->
@@ -36,7 +36,7 @@
 
 			<div class="row2">
 				<div class="card">
-					<label for="concurrency">Concurrent Prompts</label>
+					<label for="concurrency">⚡ Concurrent Prompts</label>
 					<select id="concurrency">
 						<option value="1">1 prompt</option>
 						<option value="2">2 prompts</option>
@@ -46,7 +46,7 @@
 					<small>Number of prompts to process simultaneously.</small>
 				</div>
 				<div class="card">
-					<label>Random Delay (seconds)</label>
+					<label>◷ Random Delay (seconds)</label>
 					<div class="delay">
 						<input type="number" id="delayMin" min="0" max="600" />
 						<button id="swapDelay" class="icon" title="Swap">⇄</button>
@@ -331,6 +331,20 @@
 			<button id="runBtn" class="primary run">▶ Run</button>
 		</footer>
 
+		<!-- shown only when the active tab is not a connected generator page -->
+		<div class="gate hidden" id="gate">
+			<div class="gate-card">
+				<div class="gate-icon">!</div>
+				<h2>Not on a generator page</h2>
+				<p id="gateText">UnQ works on a generator page. Open one of the supported platforms to begin.</p>
+				<div class="gate-actions">
+					<button id="gatePrimary" class="primary">↗ Open Meta AI</button>
+				</div>
+				<div class="gate-more" id="gateMore"></div>
+			</div>
+		</div>
+
 		<script type="module" src="panel.js"></script>
+		<script type="module" src="gate.js"></script>
 	</body>
 </html>
