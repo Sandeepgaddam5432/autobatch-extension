@@ -1,43 +1,63 @@
 import {
 	DEFAULTS,
+	MODES,
+	ASPECT_RATIOS,
 	getSettings,
 	setSettings,
 	resetSettings,
-	getLibrary,
-	clearLibrary,
-	getDailyUsage,
 	exportConfig,
 	importConfig,
-	resetCounter,
+	getLibrary,
+	clearLibrary,
+	clearCaches,
 } from "../core/storage.js"
-import { parseAny, parseVariables, buildJobs } from "../core/prompts.js"
+import { parseAny, parseFile, parseVariables, buildJobs } from "../core/prompts.js"
+import { pushLog, getLogs, clearLogs, formatLog } from "../core/logger.js"
 
-const $ = (id) => document.getElementById(id)
+const MODE_ICONS = { t2v: "🎬", f2v: "🖼", ing2v: "🧩", t2i: "✨", i2i: "🎨" }
+const REPO = "https://github.com/Sandeepgaddam5432/autobatch-extension"
+
+const el = (id) => document.getElementById(id)
+const state = {
+	settings: { ...DEFAULTS },
+	tabId: null,
+	platform: null,
+	supportedModes: null,
+	images: [],
+	rows: [],
+	items: new Map(),
+	running: false,
+	paused: false,
+	startedAt: 0,
+}
+
+/* ---------------- settings binding ---------------- */
 
 const FIELDS = [
-	"mode",
-	"aspectRatio",
-	"outputsPerPrompt",
 	"concurrency",
-	"delayMinMs",
-	"delayMaxMs",
-	"maxRetries",
-	"timeoutMs",
-	"stopOnConsecutiveFailures",
+	"outputsPerPrompt",
+	"folder",
+	"autoRenameFiles",
+	"autoAddCharacterImages",
+	"maxInputImages",
+	"frameOption",
+	"imageMatchMode",
 	"prefix",
 	"suffix",
 	"variablesJson",
 	"repeatCount",
 	"shuffle",
 	"dedupe",
-	"imageMatchMode",
-	"autoDownload",
-	"downloadQuality",
-	"folder",
+	"defaultMode",
+	"aspectRatio",
+	"videoOption",
+	"imageModeOption",
+	"maxRetries",
+	"downloadQualityVideo",
+	"downloadQualityImage",
+	"stopOnConsecutiveFailures",
 	"folderPerDate",
 	"folderPerRun",
-	"filenameTemplate",
-	"startIndex",
 	"skipDuplicates",
 	"scheduleEnabled",
 	"windowStart",
@@ -45,500 +65,520 @@ const FIELDS = [
 	"dailyLimit",
 	"keepAwake",
 	"notifyOnFinish",
+	"autoDetectSelectors",
+	"selectorConfigUrl",
+	"filenameTemplate",
 	"theme",
 	"locale",
-	"selectorConfigUrl",
 ]
 
-let rows = [] // parsed prompt rows
-let images = [] // { name, dataUrl }
-let jobs = []
-let itemState = new Map()
-let startedAt = 0
-let running = false
-
-/* ---------------- i18n ---------------- */
-function applyI18n() {
-	for (const el of document.querySelectorAll("[data-i18n]")) {
-		const message = chrome.i18n.getMessage(el.dataset.i18n)
-		if (message) el.textContent = message
-	}
+function fillSelect(node, options) {
+	node.innerHTML = options.map((o) => `<option value="${o.value}">${o.label}</option>`).join("")
 }
 
-/* ---------------- settings binding ---------------- */
-async function loadSettings() {
-	const settings = await getSettings()
+function applySettingsToForm() {
 	for (const key of FIELDS) {
-		const el = $(key)
-		if (!el) continue
-		if (el.type === "checkbox") el.checked = !!settings[key]
-		else el.value = settings[key] ?? ""
+		const node = el(key)
+		if (!node) continue
+		const value = state.settings[key]
+		if (node.type === "checkbox") node.checked = !!value
+		else node.value = value ?? ""
 	}
-	$("prompts").value = settings.lastPrompts || ""
-	document.body.dataset.theme = settings.theme === "light" ? "light" : "dark"
-	reparse()
-	refreshDaily()
-	return settings
+	el("delayMin").value = state.settings.delayMinSec
+	el("delayMax").value = state.settings.delayMaxSec
+	el("timeoutSec").value = Math.round(state.settings.timeoutMs / 1000)
+	el("prompts").value = state.settings.lastPrompts || ""
+	document.body.classList.toggle("light", state.settings.theme === "light")
 }
 
 function readForm() {
-	const out = {}
+	const patch = {}
 	for (const key of FIELDS) {
-		const el = $(key)
-		if (!el) continue
-		if (el.type === "checkbox") out[key] = el.checked
-		else if (el.type === "number") out[key] = Number(el.value)
-		else out[key] = el.value
+		const node = el(key)
+		if (!node) continue
+		if (node.type === "checkbox") patch[key] = node.checked
+		else if (node.type === "number") patch[key] = Number(node.value)
+		else patch[key] = node.value
 	}
-	return out
+	patch.delayMinSec = Number(el("delayMin").value) || 0
+	patch.delayMaxSec = Number(el("delayMax").value) || 0
+	patch.timeoutMs = Math.max(30, Number(el("timeoutSec").value) || 300) * 1000
+	patch.mode = state.settings.mode
+	patch.lastPrompts = el("prompts").value
+	return patch
 }
 
-let saveTimer = null
-function scheduleSave() {
-	clearTimeout(saveTimer)
-	saveTimer = setTimeout(() => {
-		setSettings({ ...readForm(), lastPrompts: $("prompts").value }).catch(() => {})
-	}, 400)
+async function persist() {
+	state.settings = await setSettings(readForm())
+	document.body.classList.toggle("light", state.settings.theme === "light")
 }
 
-/* ---------------- prompt parsing ---------------- */
-function reparse() {
-	rows = parseAny($("prompts").value, "inline.txt")
-	$("promptCount").textContent = `${rows.length} prompts`
-	try {
-		const preview = buildJobs({
-			rows,
-			variables: parseVariables($("variablesJson").value),
-			prefix: $("prefix").value,
-			suffix: $("suffix").value,
-			repeatCount: Number($("repeatCount").value) || 1,
-			dedupe: $("dedupe").checked,
-			shuffle: false,
-			images,
-			imageMatchMode: $("imageMatchMode").value,
+/* ---------------- modes + conditional UI ---------------- */
+
+function renderModes() {
+	el("modes").innerHTML = MODES.map(
+		(m) =>
+			`<button class="mode${m.value === state.settings.mode ? " on" : ""}" data-mode="${m.value}"${
+				state.supportedModes && !state.supportedModes.includes(m.value) ? " disabled" : ""
+			}><span class="ico">${MODE_ICONS[m.value]}</span>${m.label}</button>`
+	).join("")
+	for (const button of el("modes").querySelectorAll(".mode")) {
+		button.addEventListener("click", async () => {
+			state.settings.mode = button.dataset.mode
+			renderModes()
+			applyConditionalUi()
+			await persist()
 		})
-		$("expandCount").textContent = `→ ${preview.length} jobs after expansion`
-	} catch (err) {
-		$("expandCount").textContent = `variables JSON error: ${err.message}`
 	}
 }
 
-/* ---------------- logging + status ---------------- */
-function log(line) {
-	const el = $("log")
-	el.textContent = `${new Date().toLocaleTimeString()}  ${line}\n${el.textContent}`.slice(0, 12000)
+function applyConditionalUi() {
+	const mode = state.settings.mode
+	const needsImages = (MODES.find((m) => m.value === mode) || {}).needsImages
+	el("dropzoneCard").classList.toggle("hidden", !needsImages)
+	el("characterCard").classList.toggle("hidden", !needsImages)
+	el("frameOptionCard").classList.toggle("hidden", mode !== "f2v")
+	el("maxImagesCard").classList.toggle("hidden", !(mode === "ing2v" || mode === "i2i"))
 }
 
-function setStatus(text, kind = "") {
-	$("status").textContent = text
-	$("status").className = `pill ${kind}`
-}
+/* ---------------- prompts ---------------- */
 
-function setRunning(state) {
-	running = state
-	$("run").disabled = state
-	$("stop").disabled = !state
-	$("pause").disabled = !state
-	$("pause").textContent = "Pause"
-}
-
-/* ---------------- queue rendering ---------------- */
-function renderQueue() {
-	const filter = ($("queueFilter").value || "").toLowerCase()
-	const host = $("queue")
-	host.innerHTML = ""
-	for (const job of jobs) {
-		if (filter && !job.text.toLowerCase().includes(filter)) continue
-		const state = itemState.get(job.index) || { status: "queued", note: "" }
-		const item = document.createElement("div")
-		item.className = `item ${state.status}`
-		const text = document.createElement("div")
-		text.className = "txt"
-		text.textContent = `${job.index + 1}. ${job.text}`
-		const meta = document.createElement("div")
-		meta.className = "meta"
-		const left = document.createElement("span")
-		left.textContent = `${state.status}${state.note ? ` · ${state.note}` : ""}`
-		meta.appendChild(left)
-		if (state.status === "failed" && running) {
-			const retry = document.createElement("button")
-			retry.className = "mini ghost"
-			retry.textContent = "retry"
-			retry.onclick = () => sendToTab({ type: "UNQ_RETRY_ITEM", job })
-			meta.appendChild(retry)
+function refreshParsed() {
+	const variables = (() => {
+		try {
+			return parseVariables(el("variablesJson").value)
+		} catch (err) {
+			return {}
 		}
-		item.append(text, meta)
-		host.appendChild(item)
-	}
-}
-
-function updateProgress(stats) {
-	if (!stats || !stats.total) return
-	const finished = stats.done + stats.failed
-	$("barFill").style.width = `${Math.round((finished / stats.total) * 100)}%`
-	$("summary").textContent = `${finished}/${stats.total} · ${stats.downloaded} saved${
-		stats.failed ? ` · ${stats.failed} failed` : ""
-	}`
-	if (finished > 0 && startedAt) {
-		const per = (Date.now() - startedAt) / finished
-		const left = Math.max(0, Math.round((per * (stats.total - finished)) / 1000))
-		$("eta").textContent = `~${Math.floor(left / 60)}m ${left % 60}s left`
-	}
-}
-
-/* ---------------- tab messaging ---------------- */
-async function activeTab() {
-	const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-	return tab
-}
-
-async function sendToTab(message) {
-	const tab = await activeTab()
-	if (!tab) throw new Error("no active tab")
-	return await chrome.tabs.sendMessage(tab.id, message)
-}
-
-async function detect() {
-	try {
-		const info = await sendToTab({ type: "UNQ_PING" })
-		if (info && info.ok) {
-			$("platformLabel").textContent = info.label
-			if (info.aspectRatios && info.aspectRatios.length) {
-				const select = $("aspectRatio")
-				const current = select.value
-				select.innerHTML = ""
-				for (const ratio of info.aspectRatios) {
-					const option = document.createElement("option")
-					option.value = ratio
-					option.textContent = ratio
-					select.appendChild(option)
-				}
-				select.value = info.aspectRatios.includes(current) ? current : info.aspectRatios[0]
-			}
-			setRunning(!!info.running)
-			setStatus(info.running ? "running" : "ready", info.running ? "running" : "")
-			return info
-		}
-	} catch (err) {
-		/* no content script on this tab */
-	}
-	$("platformLabel").textContent = "unsupported page"
-	setStatus("open a supported site", "err")
-	return null
-}
-
-/* ---------------- library ---------------- */
-async function renderLibrary() {
-	const filter = ($("libFilter").value || "").toLowerCase()
-	const entries = await getLibrary()
-	const host = $("library")
-	host.innerHTML = ""
-	const shown = entries
-		.filter((entry) => !filter || (entry.prompt || "").toLowerCase().includes(filter))
-		.slice(0, 300)
-	if (!shown.length) {
-		host.innerHTML = '<div class="hint">Nothing yet.</div>'
-		return
-	}
-	for (const entry of shown) {
-		const item = document.createElement("div")
-		item.className = "item done"
-		const text = document.createElement("div")
-		text.className = "txt"
-		text.textContent = entry.prompt
-		const meta = document.createElement("div")
-		meta.className = "meta"
-		const left = document.createElement("span")
-		left.textContent = `${entry.platform} · ${entry.mode} · ${new Date(entry.ts).toLocaleString()}`
-		meta.appendChild(left)
-		if (entry.filename) {
-			const name = document.createElement("span")
-			name.textContent = entry.filename
-			meta.appendChild(name)
-		}
-		item.append(text, meta)
-		host.appendChild(item)
-	}
-}
-
-function saveBlob(content, filename, mime) {
-	const blob = new Blob([content], { type: mime })
-	const link = document.createElement("a")
-	link.href = URL.createObjectURL(blob)
-	link.download = filename
-	link.click()
-	setTimeout(() => URL.revokeObjectURL(link.href), 5000)
-}
-
-async function refreshDaily() {
-	const daily = await getDailyUsage()
-	$("dailyUsage").textContent = `Today: ${daily.count} generations`
-}
-
-/* ---------------- run ---------------- */
-async function startRun() {
-	reparse()
-	if (!rows.length) {
-		log("no prompts")
-		return
-	}
-	const info = await detect()
-	if (!info) return
-
-	const settings = await setSettings({ ...readForm(), lastPrompts: $("prompts").value })
-	let variables = {}
-	try {
-		variables = parseVariables(settings.variablesJson)
-	} catch (err) {
-		log(`variables JSON invalid: ${err.message}`)
-		return
-	}
-
-	jobs = buildJobs({
-		rows,
+	})()
+	const jobs = buildJobs({
+		rows: state.rows.length ? state.rows : parseAny(el("prompts").value),
 		variables,
-		prefix: settings.prefix,
-		suffix: settings.suffix,
-		repeatCount: settings.repeatCount,
-		dedupe: settings.dedupe,
-		shuffle: settings.shuffle,
-		images,
-		imageMatchMode: settings.imageMatchMode,
+		prefix: el("prefix").value,
+		suffix: el("suffix").value,
+		repeatCount: Number(el("repeatCount").value) || 1,
+		dedupe: el("dedupe").checked,
+		shuffle: false,
+		images: state.images,
+		mode: state.settings.mode,
+		imageMatchMode: el("imageMatchMode").value,
+		maxInputImages: Number(el("maxInputImages").value) || 1,
+		frameOption: el("frameOption").value,
+		autoAddCharacterImages: el("autoAddCharacterImages").checked,
 	})
-	itemState = new Map()
-	startedAt = Date.now()
-	if (settings.startIndex && settings.startIndex > 0) await resetCounter(`${settings.folder}:global`)
-	renderQueue()
-
-	const reply = await sendToTab({ type: "UNQ_START", config: { ...settings, jobs } })
-	if (!reply || !reply.ok) {
-		log(`start failed: ${(reply && reply.error) || "unknown"}`)
-		return
-	}
-	setRunning(true)
-	setStatus("running", "running")
-	log(`run started · ${jobs.length} jobs on ${info.label}`)
+	const outputs = Number(el("outputsPerPrompt").value) || 1
+	el("parsed").textContent = `${jobs.length} prompts → ${jobs.length * outputs} outputs`
+	return jobs
 }
 
-/* ---------------- events from the page ---------------- */
-chrome.runtime.onMessage.addListener((message) => {
-	if (!message || message.type !== "UNQ_EVENT") return
-	const event = message.event
-	const mark = (status, note) => {
-		if (typeof event.index === "number") itemState.set(event.index, { status, note })
-		renderQueue()
-	}
+function renderThumbs() {
+	el("thumbs").innerHTML = state.images
+		.map((img) => `<figure><img src="${img.dataUrl}" alt="" /><figcaption>${img.name}</figcaption></figure>`)
+		.join("")
+}
 
-	switch (event.type) {
-		case "run:started":
-			setRunning(true)
-			setStatus("running", "running")
-			break
-		case "item:submitting":
-			mark("running", "submitting")
-			break
-		case "item:generating":
-			mark("running", "generating")
-			break
-		case "item:generated":
-			mark("running", `${event.count} result(s)`)
-			break
-		case "item:downloaded":
-			mark("running", `${event.count} saved`)
-			break
-		case "item:downloadFailed":
-			log(`download failed #${event.index + 1}: ${event.error}`)
-			break
-		case "item:retry":
-			mark("running", `retry ${event.attempt}`)
-			log(`retry #${event.index + 1}: ${event.error}`)
-			break
-		case "item:done":
-			mark("done", "")
-			break
-		case "item:failed":
-			mark("failed", event.error)
-			log(`failed #${event.index + 1}: ${event.error}`)
-			break
-		case "run:cooldown":
-			setStatus(`cooldown ${Math.round(event.ms / 1000)}s`, "running")
-			break
-		case "run:waiting":
-			setStatus(`waiting (${event.reason})`, "paused")
-			break
-		case "run:blocked":
-			setStatus("daily cap reached", "err")
-			break
-		case "run:paused":
-			setStatus("paused", "paused")
-			break
-		case "run:resumed":
-			setStatus("running", "running")
-			break
-		case "run:aborted":
-			log(`aborted: ${event.reason}`)
-			break
-		case "run:error":
-			setRunning(false)
-			setStatus("error", "err")
-			log(`error: ${event.error}`)
-			break
-		case "run:stopped":
-		case "run:finished":
-			setRunning(false)
-			setStatus(event.type === "run:finished" ? "finished" : "stopped", "done")
-			log(`${event.type} in ${Math.round((event.elapsedMs || 0) / 1000)}s`)
-			renderLibrary()
-			refreshDaily()
-			break
-		default:
-			break
-	}
-	updateProgress(event.stats)
-})
-
-/* ---------------- wiring ---------------- */
-for (const tab of document.querySelectorAll(".tab")) {
-	tab.onclick = () => {
-		for (const el of document.querySelectorAll(".tab")) el.classList.toggle("active", el === tab)
-		for (const el of document.querySelectorAll(".panel")) {
-			el.classList.toggle("active", el.id === `tab-${tab.dataset.tab}`)
+async function addImages(files) {
+	for (const file of files) {
+		if (file.size > 10 * 1024 * 1024) {
+			await pushLog(`skipped ${file.name}: larger than 10MB`, "warn")
+			continue
 		}
-		if (tab.dataset.tab === "library") renderLibrary()
-		if (tab.dataset.tab === "queue") renderQueue()
-	}
-}
-
-for (const key of FIELDS) {
-	const el = $(key)
-	if (!el) continue
-	el.addEventListener("change", () => {
-		scheduleSave()
-		if (["variablesJson", "prefix", "suffix", "repeatCount", "dedupe", "imageMatchMode"].includes(key)) {
-			reparse()
-		}
-		if (key === "theme") document.body.dataset.theme = el.value
-	})
-}
-
-$("prompts").addEventListener("input", () => {
-	reparse()
-	scheduleSave()
-})
-
-$("promptFile").addEventListener("change", async (event) => {
-	const file = event.target.files[0]
-	if (!file) return
-	const text = await file.text()
-	const parsed = parseAny(text, file.name)
-	$("prompts").value = parsed.map((row) => row.text).join("\n\n")
-	reparse()
-	scheduleSave()
-	log(`loaded ${parsed.length} prompts from ${file.name}`)
-})
-
-$("imageFiles").addEventListener("change", async (event) => {
-	images = []
-	for (const file of event.target.files) {
 		const dataUrl = await new Promise((resolve) => {
 			const reader = new FileReader()
 			reader.onload = () => resolve(reader.result)
 			reader.readAsDataURL(file)
 		})
-		images.push({ name: file.name, dataUrl })
+		state.images.push({ name: file.name, dataUrl })
 	}
-	$("imageCount").textContent = `${images.length} images`
-	reparse()
+	renderThumbs()
+	refreshParsed()
+}
+
+/* ---------------- platform detection ---------------- */
+
+async function detectPlatform() {
+	const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+	if (!tab) return
+	state.tabId = tab.id
+	try {
+		const reply = await chrome.tabs.sendMessage(tab.id, { type: "UNQ_PING" })
+		if (reply && reply.adapter) {
+			state.platform = reply.adapter
+			state.supportedModes = reply.modes || null
+			el("platform").textContent = reply.label || reply.adapter
+			if (state.supportedModes && !state.supportedModes.includes(state.settings.mode)) {
+				state.settings.mode = state.supportedModes[0]
+			}
+			renderModes()
+			applyConditionalUi()
+			return
+		}
+	} catch (err) {
+		/* content script not present */
+	}
+	el("platform").textContent = "not a supported page — open meta.ai, Flow, Grok, Gemini, ChatGPT or Qwen"
+}
+
+/* ---------------- run control ---------------- */
+
+function setRunning(running) {
+	state.running = running
+	el("runBtn").textContent = running ? "Running…" : "▶ Run"
+	el("runBtn").disabled = running
+	el("pauseBtn").classList.toggle("hidden", !running)
+	el("stopBtn").classList.toggle("hidden", !running)
+}
+
+function renderQueue() {
+	const items = [...state.items.values()]
+	const done = items.filter((i) => i.status === "done").length
+	const failed = items.filter((i) => i.status === "failed").length
+	const active = items.filter((i) => i.status === "running").length
+	el("activeCount").textContent = `${active} active`
+	el("barFill").style.width = items.length ? `${((done + failed) / items.length) * 100}%` : "0"
+
+	const elapsed = state.startedAt ? (Date.now() - state.startedAt) / 1000 : 0
+	const finished = done + failed
+	const eta = finished && elapsed ? Math.round((elapsed / finished) * (items.length - finished)) : 0
+	const rate = finished ? Math.round((done / finished) * 100) : 0
+	el("stats").textContent = items.length
+		? `${done} done · ${failed} failed · ${items.length - finished} left${
+				eta ? ` · ETA ~${Math.floor(eta / 60)}m ${eta % 60}s` : ""
+		  }${finished ? ` · ${rate}% success` : ""}`
+		: "Idle"
+
+	el("queue").innerHTML = items
+		.map(
+			(item) =>
+				`<div class="item ${item.status}"><span class="txt">${item.index + 1}. ${item.text.slice(
+					0,
+					70
+				)}</span><span class="st">${item.status}${item.error ? `: ${item.error}` : ""}</span>${
+					item.status === "failed" ? `<button data-retry="${item.index}">Retry</button>` : ""
+				}</div>`
+		)
+		.join("")
+	for (const button of el("queue").querySelectorAll("[data-retry]")) {
+		button.addEventListener("click", () =>
+			chrome.tabs.sendMessage(state.tabId, {
+				type: "UNQ_RETRY_ITEM",
+				index: Number(button.dataset.retry),
+			})
+		)
+	}
+}
+
+async function startRun() {
+	await persist()
+	if (!state.tabId) {
+		alert("Open a supported generator tab first.")
+		return
+	}
+	const jobs = refreshParsed()
+	if (!jobs.length) {
+		alert("Add at least one prompt.")
+		return
+	}
+	const needsImages = (MODES.find((m) => m.value === state.settings.mode) || {}).needsImages
+	if (needsImages && !state.images.length) {
+		alert("This mode needs at least one input image.")
+		return
+	}
+
+	state.items = new Map(jobs.map((job) => [job.index, { ...job, status: "queued" }]))
+	state.startedAt = Date.now()
+	renderQueue()
+	setRunning(true)
+	await pushLog(`run started · ${jobs.length} prompts · mode ${state.settings.mode}`)
+
+	try {
+		await chrome.tabs.sendMessage(state.tabId, {
+			type: "UNQ_START",
+			jobs,
+			config: { ...state.settings, platform: state.platform },
+		})
+	} catch (err) {
+		setRunning(false)
+		await pushLog(`could not reach the page: ${err.message}`, "error")
+		alert(`Could not reach the page: ${err.message}\nReload the generator tab and try again.`)
+	}
+}
+
+/* ---------------- events from the page ---------------- */
+
+chrome.runtime.onMessage.addListener(async (message) => {
+	if (!message || message.type !== "UNQ_EVENT") return
+	const { event, payload = {} } = message
+	const item = typeof payload.index === "number" ? state.items.get(payload.index) : null
+
+	if (item) {
+		if (event === "item:submitting") item.status = "running"
+		if (event === "item:generating") item.status = "running"
+		if (event === "item:generated") item.status = "running"
+		if (event === "item:downloaded" || event === "item:done") item.status = "done"
+		if (event === "item:failed") {
+			item.status = "failed"
+			item.error = payload.error
+		}
+		if (event === "item:retry") item.status = "queued"
+	}
+	if (event === "run:finished" || event === "run:stopped" || event === "run:aborted") {
+		setRunning(false)
+	}
+	if (event === "run:paused") state.paused = true
+	if (event === "run:resumed") state.paused = false
+	el("pauseBtn").textContent = state.paused ? "Resume" : "Pause"
+
+	renderQueue()
+	await pushLog(
+		`${event}${typeof payload.index === "number" ? ` #${payload.index + 1}` : ""}${
+			payload.error ? ` — ${payload.error}` : ""
+		}${payload.filename ? ` — ${payload.filename}` : ""}`,
+		event.includes("failed") || event.includes("error") ? "error" : "info"
+	)
+	if (document.querySelector("#tab-logs").classList.contains("active")) renderLogs()
 })
 
-$("run").onclick = () => startRun().catch((err) => log(`run error: ${err.message}`))
-$("stop").onclick = () => sendToTab({ type: "UNQ_STOP" }).catch(() => {})
-$("pause").onclick = async () => {
-	const paused = $("pause").textContent === "Pause"
-	await sendToTab({ type: paused ? "UNQ_PAUSE" : "UNQ_RESUME" }).catch(() => {})
-	$("pause").textContent = paused ? "Resume" : "Pause"
+/* ---------------- logs ---------------- */
+
+async function renderLogs() {
+	const logs = await getLogs()
+	el("logCount").textContent = `${logs.length} entries`
+	el("logs").textContent = logs.length
+		? logs.map(formatLog).join("\n")
+		: "No logs yet. Start an automation to see activity here."
+	if (el("autoScroll").checked) el("logs").scrollTop = el("logs").scrollHeight
 }
-$("probe").onclick = async () => {
-	try {
-		const info = await sendToTab({ type: "UNQ_PING" })
-		const text = JSON.stringify(info && info.probe, null, 2)
-		log(`probe ${text}`)
-		$("probeOut").textContent = text
-	} catch (err) {
-		log(`probe failed: ${err.message}`)
+
+/* ---------------- library ---------------- */
+
+async function renderLibrary() {
+	const term = el("librarySearch").value.trim().toLowerCase()
+	const entries = (await getLibrary()).filter(
+		(entry) => !term || String(entry.prompt || "").toLowerCase().includes(term)
+	)
+	el("library").innerHTML = entries.length
+		? entries
+				.slice(0, 300)
+				.map(
+					(entry) =>
+						`<div class="lib-item"><div><b>${entry.filename || "—"}</b><br /><span>${String(
+							entry.prompt || ""
+						).slice(0, 90)}</span><br /><small>${entry.platform || ""} · ${entry.mode || ""} · ${new Date(
+							entry.at || Date.now()
+						).toLocaleString()}</small></div></div>`
+				)
+				.join("")
+		: '<small style="padding:8px 0">Nothing here yet.</small>'
+}
+
+function download(name, text, type = "application/json") {
+	const url = URL.createObjectURL(new Blob([text], { type }))
+	const link = document.createElement("a")
+	link.href = url
+	link.download = name
+	link.click()
+	setTimeout(() => URL.revokeObjectURL(url), 4000)
+}
+
+/* ---------------- wiring ---------------- */
+
+function wire() {
+	for (const tab of document.querySelectorAll(".tab")) {
+		tab.addEventListener("click", () => {
+			for (const other of document.querySelectorAll(".tab")) other.classList.remove("active")
+			for (const panel of document.querySelectorAll(".panel")) panel.classList.remove("active")
+			tab.classList.add("active")
+			el(`tab-${tab.dataset.tab}`).classList.add("active")
+			if (tab.dataset.tab === "logs") renderLogs()
+			if (tab.dataset.tab === "library") renderLibrary()
+		})
 	}
-}
-$("retryFailed").onclick = async () => {
-	for (const [index, state] of itemState) {
-		if (state.status !== "failed") continue
-		const job = jobs.find((candidate) => candidate.index === index)
-		if (job) await sendToTab({ type: "UNQ_RETRY_ITEM", job }).catch(() => {})
+
+	for (const node of document.querySelectorAll("input, select, textarea")) {
+		node.addEventListener("change", async () => {
+			await persist()
+			refreshParsed()
+		})
 	}
-}
-$("queueFilter").oninput = renderQueue
-$("libFilter").oninput = renderLibrary
-$("clearLib").onclick = async () => {
-	await clearLibrary()
-	renderLibrary()
-}
-$("exportJson").onclick = async () => {
-	saveBlob(JSON.stringify(await getLibrary(), null, 2), "unq-library.json", "application/json")
-}
-$("exportCsv").onclick = async () => {
-	const entries = await getLibrary()
-	const header = "timestamp,platform,mode,ratio,filename,prompt\n"
-	const body = entries
-		.map((entry) =>
-			[
-				new Date(entry.ts).toISOString(),
-				entry.platform,
-				entry.mode,
-				entry.ratio,
-				entry.filename,
-				`"${String(entry.prompt || "").replace(/"/g, '""')}"`,
-			].join(",")
-		)
-		.join("\n")
-	saveBlob(header + body, "unq-library.csv", "text/csv")
-}
-$("exportCfg").onclick = async () => saveBlob(await exportConfig(), "unq-settings.json", "application/json")
-$("importCfg").addEventListener("change", async (event) => {
-	const file = event.target.files[0]
-	if (!file) return
-	try {
-		await importConfig(await file.text())
-		await loadSettings()
-		log("settings imported")
-	} catch (err) {
-		log(`import failed: ${err.message}`)
+	el("prompts").addEventListener("input", () => {
+		state.rows = []
+		refreshParsed()
+	})
+
+	el("swapDelay").addEventListener("click", async () => {
+		const min = el("delayMin").value
+		el("delayMin").value = el("delayMax").value
+		el("delayMax").value = min
+		await persist()
+	})
+
+	// prompt source buttons
+	for (const button of el("promptSource").querySelectorAll(".seg-btn")) {
+		button.addEventListener("click", () => {
+			for (const other of el("promptSource").querySelectorAll(".seg-btn")) other.classList.remove("active")
+			button.classList.add("active")
+			if (button.dataset.src === "text") return
+			el("promptFile").accept = button.dataset.src === "txt" ? ".txt" : ".csv,.tsv,.xlsx"
+			el("promptFile").click()
+		})
 	}
-})
-$("resetCfg").onclick = async () => {
-	await resetSettings()
-	await loadSettings()
-	log("settings reset")
-}
-$("themeToggle").onclick = async () => {
-	const next = document.body.dataset.theme === "light" ? "dark" : "light"
-	document.body.dataset.theme = next
-	if ($("theme")) $("theme").value = next
-	await setSettings({ theme: next })
-}
-$("popout").onclick = () => {
-	chrome.windows.create({
-		url: chrome.runtime.getURL("src/sidepanel/index.html?popout=1"),
-		type: "popup",
-		width: 460,
-		height: 900,
+	el("promptFile").addEventListener("change", async (event) => {
+		const file = event.target.files[0]
+		if (!file) return
+		try {
+			state.rows = await parseFile(file)
+			el("prompts").value = state.rows.map((row) => row.text).join("\n\n")
+			await pushLog(`loaded ${state.rows.length} prompts from ${file.name}`)
+		} catch (err) {
+			state.rows = []
+			await pushLog(`could not read ${file.name}: ${err.message}`, "error")
+			alert(`Could not read ${file.name}: ${err.message}`)
+		}
+		refreshParsed()
+		event.target.value = ""
+	})
+
+	// dropzone
+	const zone = el("dropzone")
+	zone.addEventListener("click", () => el("images").click())
+	zone.addEventListener("dragover", (event) => {
+		event.preventDefault()
+		zone.classList.add("over")
+	})
+	zone.addEventListener("dragleave", () => zone.classList.remove("over"))
+	zone.addEventListener("drop", async (event) => {
+		event.preventDefault()
+		zone.classList.remove("over")
+		await addImages([...event.dataTransfer.files].filter((file) => file.type.startsWith("image/")))
+	})
+	el("images").addEventListener("change", async (event) => {
+		await addImages([...event.target.files])
+		event.target.value = ""
+	})
+
+	// run controls
+	el("runBtn").addEventListener("click", startRun)
+	el("pauseBtn").addEventListener("click", () =>
+		chrome.tabs.sendMessage(state.tabId, { type: state.paused ? "UNQ_RESUME" : "UNQ_PAUSE" })
+	)
+	el("stopBtn").addEventListener("click", () =>
+		chrome.tabs.sendMessage(state.tabId, { type: "UNQ_STOP" })
+	)
+
+	// footer
+	el("reportBug").addEventListener("click", () =>
+		chrome.tabs.create({ url: `${REPO}/issues/new` })
+	)
+	el("clearCache").addEventListener("click", async () => {
+		await clearCaches()
+		await pushLog("cleared selector cache, counters, queue snapshot")
+		renderLogs()
+	})
+	el("clearPrompts").addEventListener("click", async () => {
+		el("prompts").value = ""
+		state.rows = []
+		state.images = []
+		state.items = new Map()
+		renderThumbs()
+		renderQueue()
+		refreshParsed()
+		await persist()
+	})
+
+	// settings buttons
+	el("saveSettings").addEventListener("click", async () => {
+		await persist()
+		el("saveHint").textContent = "Saved."
+		setTimeout(() => {
+			el("saveHint").textContent = "Settings are stored locally and shared across tabs."
+		}, 1500)
+	})
+	el("resetDefaults").addEventListener("click", async () => {
+		state.settings = await resetSettings()
+		applySettingsToForm()
+		renderModes()
+		applyConditionalUi()
+	})
+	el("exportSettings").addEventListener("click", async () =>
+		download("unq-config.json", await exportConfig())
+	)
+	el("importSettings").addEventListener("click", () => el("importFile").click())
+	el("importFile").addEventListener("change", async (event) => {
+		const file = event.target.files[0]
+		if (!file) return
+		try {
+			state.settings = await importConfig(await file.text())
+			applySettingsToForm()
+			renderModes()
+			applyConditionalUi()
+		} catch (err) {
+			alert(`Invalid config: ${err.message}`)
+		}
+		event.target.value = ""
+	})
+
+	// logs
+	el("copyLogs").addEventListener("click", async () => {
+		const logs = await getLogs()
+		await navigator.clipboard.writeText(logs.map(formatLog).join("\n"))
+	})
+	el("clearLogs").addEventListener("click", async () => {
+		await clearLogs()
+		renderLogs()
+	})
+	el("probeBtn").addEventListener("click", async () => {
+		try {
+			const reply = await chrome.tabs.sendMessage(state.tabId, { type: "UNQ_PING", probe: true })
+			await pushLog(`probe: ${JSON.stringify(reply && reply.probe ? reply.probe : reply)}`)
+		} catch (err) {
+			await pushLog(`probe failed: ${err.message}`, "error")
+		}
+		renderLogs()
+	})
+
+	// library
+	el("librarySearch").addEventListener("input", renderLibrary)
+	el("exportJson").addEventListener("click", async () =>
+		download("unq-library.json", JSON.stringify(await getLibrary(), null, 2))
+	)
+	el("exportCsv").addEventListener("click", async () => {
+		const entries = await getLibrary()
+		const head = "at,platform,mode,filename,prompt,url\n"
+		const body = entries
+			.map((entry) =>
+				[
+					new Date(entry.at || Date.now()).toISOString(),
+					entry.platform || "",
+					entry.mode || "",
+					entry.filename || "",
+					`"${String(entry.prompt || "").replace(/"/g, '""')}"`,
+					entry.url || "",
+				].join(",")
+			)
+			.join("\n")
+		download("unq-library.csv", head + body, "text/csv")
+	})
+	el("clearLibrary").addEventListener("click", async () => {
+		await clearLibrary()
+		renderLibrary()
 	})
 }
 
-chrome.tabs.onActivated.addListener(() => detect())
+/* ---------------- boot ---------------- */
 
-;(async () => {
-	applyI18n()
-	await loadSettings()
-	if (!$("filenameTemplate").value) $("filenameTemplate").value = DEFAULTS.filenameTemplate
-	await detect()
-	await renderLibrary()
-})()
+async function boot() {
+	state.settings = await getSettings()
+	if (!state.settings.mode) state.settings.mode = state.settings.defaultMode
+	fillSelect(el("defaultMode"), MODES.map((m) => ({ value: m.value, label: m.label })))
+	fillSelect(el("aspectRatio"), ASPECT_RATIOS)
+	applySettingsToForm()
+	renderModes()
+	applyConditionalUi()
+	wire()
+	refreshParsed()
+	await detectPlatform()
+	await renderLogs()
+}
+
+boot()

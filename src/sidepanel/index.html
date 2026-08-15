@@ -6,204 +6,330 @@
 		<title>UnQ Automation</title>
 		<link rel="stylesheet" href="panel.css" />
 	</head>
-	<body data-theme="dark">
-		<header class="top">
-			<div class="brand">
-				<span class="logo">UnQ</span>
-				<span class="sub" id="platformLabel">detecting…</span>
-			</div>
-			<div class="top-actions">
-				<span id="status" class="pill">idle</span>
-				<button id="popout" class="ghost icon" title="Open in window">↗</button>
-				<button id="themeToggle" class="ghost icon" title="Theme">◐</button>
-			</div>
-		</header>
-
-		<nav class="tabs">
-			<button class="tab active" data-tab="run" data-i18n="tabRun">Run</button>
-			<button class="tab" data-tab="queue" data-i18n="tabQueue">Queue</button>
-			<button class="tab" data-tab="library" data-i18n="tabLibrary">Library</button>
-			<button class="tab" data-tab="settings" data-i18n="tabSettings">Settings</button>
-		</nav>
-
-		<!-- ================= RUN ================= -->
-		<section class="panel active" id="tab-run">
-			<label class="lbl" data-i18n="prompts">Prompts <small>(blank line between prompts)</small></label>
-			<textarea id="prompts" rows="8" placeholder="a cinematic shot of a neon city
-
-a golden retriever surfing, 35mm film"></textarea>
-			<div class="row">
-				<input type="file" id="promptFile" accept=".txt,.csv,.tsv" />
-				<span class="hint" id="promptCount">0 prompts</span>
-			</div>
-
-			<details class="box">
-				<summary data-i18n="promptTools">Prompt tools</summary>
-				<div class="grid2">
-					<label>Prefix<input id="prefix" type="text" placeholder="cinematic," /></label>
-					<label>Suffix<input id="suffix" type="text" placeholder="8k, detailed" /></label>
-					<label>Repeat each<input id="repeatCount" type="number" min="1" max="50" /></label>
-					<label class="chk"><input id="shuffle" type="checkbox" /> Shuffle order</label>
-					<label class="chk"><input id="dedupe" type="checkbox" /> Remove duplicates</label>
-				</div>
-				<label
-					>Variables JSON <small>use {{color}} in prompts</small>
-					<textarea id="variablesJson" rows="3" placeholder='{"color":["red","blue"],"style":["anime","3d"]}'></textarea>
-				</label>
-				<div class="hint" id="expandCount"></div>
-			</details>
-
-			<details class="box">
-				<summary data-i18n="sourceImages">Source images (image-to-image / image-to-video)</summary>
-				<input type="file" id="imageFiles" accept="image/*" multiple />
-				<label
-					>Pairing
-					<select id="imageMatchMode">
-						<option value="oneToOne">1 image → 1 prompt (in order)</option>
-						<option value="oneImageAllPrompts">1 image → all prompts</option>
-						<option value="allImagesEachPrompt">all images → each prompt</option>
-						<option value="firstLastFrame">first + last frame</option>
-					</select>
-				</label>
-				<div class="hint" id="imageCount">0 images</div>
-			</details>
-
-			<div class="grid2">
-				<label data-i18n="mode"
-					>Mode
-					<select id="mode">
-						<option value="t2i">Text → Image</option>
-						<option value="t2v">Text → Video</option>
-						<option value="i2i">Image → Image</option>
-						<option value="i2v">Image → Video</option>
-						<option value="f2v">Frames → Video</option>
-					</select>
-				</label>
-				<label data-i18n="ratio"
-					>Aspect ratio
-					<select id="aspectRatio">
-						<option value="1:1">1:1</option>
-						<option value="16:9">16:9</option>
-						<option value="9:16">9:16</option>
-					</select>
-				</label>
-				<label>Outputs / prompt<input id="outputsPerPrompt" type="number" min="1" max="8" /></label>
-				<label>Concurrency<input id="concurrency" type="number" min="1" max="5" /></label>
-				<label>Delay min (ms)<input id="delayMinMs" type="number" min="0" step="500" /></label>
-				<label>Delay max (ms)<input id="delayMaxMs" type="number" min="0" step="500" /></label>
-			</div>
-
-			<div class="actions">
-				<button id="run" class="primary" data-i18n="run">Run</button>
-				<button id="pause" class="ghost" data-i18n="pause" disabled>Pause</button>
-				<button id="stop" class="danger" data-i18n="stop" disabled>Stop</button>
-				<button id="probe" class="ghost" data-i18n="probe">Probe</button>
-			</div>
-
-			<div class="bar"><div id="barFill"></div></div>
-			<div class="stats">
-				<span id="summary">—</span>
-				<span id="eta"></span>
-			</div>
-			<div id="log" class="log"></div>
-		</section>
-
-		<!-- ================= QUEUE ================= -->
-		<section class="panel" id="tab-queue">
-			<div class="row spread">
-				<input id="queueFilter" type="search" placeholder="Filter queue…" />
-				<button id="retryFailed" class="ghost">Retry all failed</button>
-			</div>
-			<div id="queue" class="queue"></div>
-		</section>
-
-		<!-- ================= LIBRARY ================= -->
-		<section class="panel" id="tab-library">
-			<div class="row spread">
-				<input id="libFilter" type="search" placeholder="Search prompts…" />
-				<div class="row">
-					<button id="exportCsv" class="ghost">CSV</button>
-					<button id="exportJson" class="ghost">JSON</button>
-					<button id="clearLib" class="danger ghost">Clear</button>
-				</div>
-			</div>
-			<div id="library" class="queue"></div>
-		</section>
-
-		<!-- ================= SETTINGS ================= -->
-		<section class="panel" id="tab-settings">
-			<h3 data-i18n="downloads">Downloads</h3>
-			<div class="grid2">
-				<label class="chk"><input id="autoDownload" type="checkbox" /> Auto-download</label>
-				<label class="chk"><input id="skipDuplicates" type="checkbox" /> Skip duplicates</label>
-				<label>Folder<input id="folder" type="text" /></label>
-				<label>Start number<input id="startIndex" type="number" min="1" /></label>
-				<label class="chk"><input id="folderPerDate" type="checkbox" /> Subfolder per date</label>
-				<label class="chk"><input id="folderPerRun" type="checkbox" /> Subfolder per run</label>
-				<label
-					>Quality
-					<select id="downloadQuality">
-						<option value="best">Best available</option>
-						<option value="1080p">1080p</option>
-						<option value="720p">720p</option>
-						<option value="gif">GIF</option>
-					</select>
-				</label>
-				<label>Filename<input id="filenameTemplate" type="text" /></label>
-			</div>
-			<div class="hint">
-				Tokens: <code>{n}</code> <code>{index}</code> <code>{slot}</code> <code>{slug}</code>
-				<code>{date}</code> <code>{time}</code> <code>{mode}</code> <code>{ratio}</code>
-				<code>{platform}</code>
-			</div>
-
-			<h3 data-i18n="scheduling">Scheduling & limits</h3>
-			<div class="grid2">
-				<label class="chk"><input id="scheduleEnabled" type="checkbox" /> Only run in time window</label>
-				<label>From<input id="windowStart" type="time" /></label>
-				<label>To<input id="windowEnd" type="time" /></label>
-				<label>Daily cap (0 = off)<input id="dailyLimit" type="number" min="0" /></label>
-				<label>Timeout per item (ms)<input id="timeoutMs" type="number" min="30000" step="10000" /></label>
-				<label>Max retries<input id="maxRetries" type="number" min="0" max="10" /></label>
-				<label>Stop after N failures<input id="stopOnConsecutiveFailures" type="number" min="0" /></label>
-			</div>
-			<div class="hint" id="dailyUsage"></div>
-
-			<h3 data-i18n="reliability">Reliability</h3>
-			<div class="grid2">
-				<label class="chk"
-					><input id="keepAwake" type="checkbox" /> Keep running in background tabs</label
-				>
-				<label class="chk"><input id="notifyOnFinish" type="checkbox" /> Notify when finished</label>
-			</div>
-			<label
-				>Remote selector config URL
-				<input id="selectorConfigUrl" type="url" placeholder="https://…/selectors.json" />
-			</label>
-			<div class="hint">
-				When a site changes its UI, a new selectors.json fixes it instantly — no update needed.
-			</div>
-
-			<h3>Config</h3>
-			<div class="row">
-				<button id="exportCfg" class="ghost">Export settings</button>
-				<input type="file" id="importCfg" accept=".json" />
-				<button id="resetCfg" class="danger ghost">Reset</button>
-			</div>
-			<label
-				>Language
-				<select id="locale">
-					<option value="auto">Auto (browser)</option>
+	<body>
+		<header class="head">
+			<div class="head-top">
+				<h1>UnQ Automation <span class="badge" id="version">v0.3.0</span></h1>
+				<select id="locale" class="mini" title="Language">
+					<option value="auto">Auto</option>
 					<option value="en">English</option>
 					<option value="te">తెలుగు</option>
 					<option value="hi">हिन्दी</option>
-					<option value="vi">Tiếng Việt</option>
 					<option value="es">Español</option>
-					<option value="zh_CN">中文</option>
+					<option value="zh">中文</option>
 				</select>
-			</label>
-			<div id="probeOut" class="log"></div>
+			</div>
+			<p class="sub">Batch automation for AI image &amp; video generators.</p>
+			<p class="sub platform">Platform: <b id="platform">detecting…</b></p>
+		</header>
+
+		<nav class="tabs">
+			<button class="tab active" data-tab="control">Control</button>
+			<button class="tab" data-tab="setting">Setting</button>
+			<button class="tab" data-tab="logs">Debug Logs</button>
+			<button class="tab" data-tab="library">Library</button>
+		</nav>
+
+		<!-- ============ CONTROL ============ -->
+		<section class="panel active" id="tab-control">
+			<div class="modes" id="modes"></div>
+
+			<div class="row2">
+				<div class="card">
+					<label for="concurrency">Concurrent Prompts</label>
+					<select id="concurrency">
+						<option value="1">1 prompt</option>
+						<option value="2">2 prompts</option>
+						<option value="3">3 prompts</option>
+						<option value="4">4 prompts</option>
+					</select>
+					<small>Number of prompts to process simultaneously.</small>
+				</div>
+				<div class="card">
+					<label>Random Delay (seconds)</label>
+					<div class="delay">
+						<input type="number" id="delayMin" min="0" max="600" />
+						<button id="swapDelay" class="icon" title="Swap">⇄</button>
+						<input type="number" id="delayMax" min="0" max="600" />
+					</div>
+					<small>Random wait time before handling the next prompt.</small>
+				</div>
+			</div>
+
+			<!-- image sections, shown per mode -->
+			<div class="card hidden" id="dropzoneCard">
+				<div class="dropzone" id="dropzone">
+					<div class="dz-icon">⬆</div>
+					<b>Click to upload or drag &amp; drop</b>
+					<small>PNG, JPG, GIF up to 10MB each</small>
+					<input type="file" id="images" accept="image/*" multiple hidden />
+				</div>
+				<div class="thumbs" id="thumbs"></div>
+			</div>
+
+			<div class="card hidden" id="frameOptionCard">
+				<label for="frameOption">Image Processing Option</label>
+				<select id="frameOption">
+					<option value="startOnly">Use Start frame only for each prompt</option>
+					<option value="startAndEnd">Use Start + End frame for each prompt</option>
+				</select>
+			</div>
+
+			<div class="card hidden" id="maxImagesCard">
+				<label for="maxInputImages">Max Input Images per Prompt</label>
+				<select id="maxInputImages">
+					<option value="1">1 image</option>
+					<option value="2">2 images</option>
+					<option value="3">3 images</option>
+					<option value="4">4 images</option>
+				</select>
+			</div>
+
+			<div class="card">
+				<div class="seg" id="promptSource">
+					<button class="seg-btn active" data-src="text">Prompts</button>
+					<button class="seg-btn" data-src="txt">Upload .txt file</button>
+					<button class="seg-btn" data-src="sheet">Upload .xlsx / .csv</button>
+				</div>
+				<textarea
+					id="prompts"
+					rows="8"
+					placeholder="Example:&#10;First long prompt.&#10;It can span multiple lines.&#10;&#10;Second prompt starts after a blank line.&#10;&#10;Third prompt."
+				></textarea>
+				<input type="file" id="promptFile" accept=".txt,.csv,.tsv,.xlsx" hidden />
+				<small>Separate prompts with a blank line. Images will be processed with each prompt based on quantity.</small>
+				<div class="parsed" id="parsed">0 prompts</div>
+			</div>
+
+			<div class="card hidden" id="characterCard">
+				<div class="toggle-row">
+					<div>
+						<b>Auto-add character images</b>
+						<small>Automatically add images that match character names in prompts (based on filename)</small>
+					</div>
+					<input type="checkbox" id="autoAddCharacterImages" class="switch" />
+				</div>
+			</div>
+
+			<details class="card">
+				<summary>Advanced prompt shaping</summary>
+				<label for="prefix">Prefix</label>
+				<input type="text" id="prefix" placeholder="cinematic," />
+				<label for="suffix">Suffix</label>
+				<input type="text" id="suffix" placeholder=", 8k detailed" />
+				<label for="variablesJson">Variables (JSON)</label>
+				<textarea id="variablesJson" rows="3" placeholder='{"color":["red","blue"]}'></textarea>
+				<small>Use <code>{{color}}</code> in prompts to expand every combination.</small>
+				<div class="row2">
+					<div>
+						<label for="repeatCount">Repeat each</label>
+						<input type="number" id="repeatCount" min="1" max="50" />
+					</div>
+					<div>
+						<label for="imageMatchMode">Image pairing</label>
+						<select id="imageMatchMode">
+							<option value="oneToOne">One image per prompt</option>
+							<option value="oneImageAllPrompts">First image for all prompts</option>
+							<option value="allImagesEachPrompt">All images on each prompt</option>
+						</select>
+					</div>
+				</div>
+				<div class="toggle-row">
+					<span>Shuffle order</span><input type="checkbox" id="shuffle" class="switch" />
+				</div>
+				<div class="toggle-row">
+					<span>Remove duplicate prompts</span><input type="checkbox" id="dedupe" class="switch" />
+				</div>
+			</details>
+
+			<div class="row2">
+				<div class="card">
+					<label for="outputsPerPrompt">Outputs per Prompt</label>
+					<select id="outputsPerPrompt">
+						<option value="1">1</option>
+						<option value="2">2</option>
+						<option value="3">3</option>
+						<option value="4">4</option>
+					</select>
+					<small>Number of images/videos to create per prompt.</small>
+				</div>
+				<div class="card">
+					<label for="folder">Save to folder</label>
+					<input type="text" id="folder" />
+					<small>Subfolder for downloaded files.</small>
+				</div>
+			</div>
+
+			<p class="hint">Customize aspect ratio, duration, and quality in the Setting tab for more control.</p>
+
+			<div class="card">
+				<div class="toggle-row">
+					<span>Auto change file name</span><input type="checkbox" id="autoRenameFiles" class="switch" />
+				</div>
+				<label for="filenameTemplate">Filename template</label>
+				<input type="text" id="filenameTemplate" />
+				<small>Tokens: {n} {index} {slot} {slug} {date} {time} {mode} {ratio} {platform}</small>
+			</div>
+
+			<div class="card">
+				<div class="queue-head">
+					<b>PROMPT QUEUE</b>
+					<span class="badge dim" id="activeCount">0 active</span>
+				</div>
+				<div class="bar"><div class="bar-fill" id="barFill"></div></div>
+				<div class="stats" id="stats">Idle</div>
+				<div class="queue" id="queue"></div>
+			</div>
 		</section>
+
+		<!-- ============ SETTING ============ -->
+		<section class="panel" id="tab-setting">
+			<div class="card">
+				<label for="defaultMode">Default Mode</label>
+				<select id="defaultMode"></select>
+				<small>Default mode when the panel opens.</small>
+
+				<label for="aspectRatio">Default Aspect Ratio</label>
+				<select id="aspectRatio"></select>
+				<small>Video / image frame ratio.</small>
+
+				<label for="videoOption">Default Video Option</label>
+				<select id="videoOption">
+					<option value="5s">5 seconds</option>
+					<option value="5s-concat">5s, 5s concat</option>
+				</select>
+				<small>Default duration setting for prompts.</small>
+
+				<label for="imageModeOption">Default Image Mode Option</label>
+				<select id="imageModeOption">
+					<option value="new">New Image</option>
+					<option value="last">Last Image</option>
+				</select>
+				<small>Default input mode for image prompts.</small>
+			</div>
+
+			<div class="card">
+				<label for="maxRetries">Max Retries on Failure</label>
+				<input type="number" id="maxRetries" min="1" max="20" />
+				<small>Number of times to retry generation if it fails (1-20).</small>
+
+				<label for="stopOnConsecutiveFailures">Abort after consecutive failures</label>
+				<input type="number" id="stopOnConsecutiveFailures" min="0" max="50" />
+
+				<label for="timeoutSec">Per-item timeout (seconds)</label>
+				<input type="number" id="timeoutSec" min="30" max="3600" />
+			</div>
+
+			<div class="card">
+				<label for="downloadQualityVideo">Auto Download Quality (Video)</label>
+				<select id="downloadQualityVideo">
+					<option value="none">No Download</option>
+					<option value="720p">720p</option>
+					<option value="1080p">1080p (paid plan may be required)</option>
+					<option value="4k">4K (paid plan may be required)</option>
+				</select>
+
+				<label for="downloadQualityImage">Auto Download Quality (Image)</label>
+				<select id="downloadQualityImage">
+					<option value="none">No Download</option>
+					<option value="1k">1k</option>
+					<option value="4k">4k (paid plan may be required)</option>
+				</select>
+
+				<div class="toggle-row">
+					<span>Folder per date</span><input type="checkbox" id="folderPerDate" class="switch" />
+				</div>
+				<div class="toggle-row">
+					<span>Folder per run</span><input type="checkbox" id="folderPerRun" class="switch" />
+				</div>
+				<div class="toggle-row">
+					<span>Skip duplicate downloads</span><input type="checkbox" id="skipDuplicates" class="switch" />
+				</div>
+				<small>Files go to Chrome's Downloads folder. Each run can get its own subfolder.</small>
+			</div>
+
+			<div class="card">
+				<div class="toggle-row">
+					<span>Schedule window</span><input type="checkbox" id="scheduleEnabled" class="switch" />
+				</div>
+				<div class="row2">
+					<div><label for="windowStart">From</label><input type="time" id="windowStart" /></div>
+					<div><label for="windowEnd">To</label><input type="time" id="windowEnd" /></div>
+				</div>
+				<label for="dailyLimit">Daily generation limit (0 = off)</label>
+				<input type="number" id="dailyLimit" min="0" max="10000" />
+			</div>
+
+			<div class="card">
+				<div class="toggle-row">
+					<span>Keep running in background tabs</span><input type="checkbox" id="keepAwake" class="switch" />
+				</div>
+				<div class="toggle-row">
+					<span>Notify when finished</span><input type="checkbox" id="notifyOnFinish" class="switch" />
+				</div>
+				<div class="toggle-row">
+					<span>Auto-detect page elements</span><input type="checkbox" id="autoDetectSelectors" class="switch" />
+				</div>
+				<label for="selectorConfigUrl">Remote selector config URL</label>
+				<input type="url" id="selectorConfigUrl" placeholder="https://…/selectors.json" />
+				<label for="theme">Theme</label>
+				<select id="theme">
+					<option value="dark">Dark</option>
+					<option value="light">Light</option>
+				</select>
+			</div>
+
+			<div class="card">
+				<div class="btn-row">
+					<button id="resetDefaults" class="ghost">Reset Defaults</button>
+					<button id="saveSettings" class="primary">Save Settings</button>
+				</div>
+				<div class="btn-row">
+					<button id="exportSettings" class="ghost">Export config</button>
+					<button id="importSettings" class="ghost">Import config</button>
+					<input type="file" id="importFile" accept=".json" hidden />
+				</div>
+				<small id="saveHint">Settings are stored locally and shared across tabs.</small>
+			</div>
+		</section>
+
+		<!-- ============ DEBUG LOGS ============ -->
+		<section class="panel" id="tab-logs">
+			<div class="card">
+				<div class="logs-head">
+					<span class="badge dim" id="logCount">0 entries</span>
+					<div class="logs-actions">
+						<label class="inline"><input type="checkbox" id="autoScroll" checked /> Auto-scroll</label>
+						<button id="probeBtn" class="ghost">Probe page</button>
+						<button id="copyLogs" class="ghost">Copy</button>
+						<button id="clearLogs" class="ghost">Clear</button>
+					</div>
+				</div>
+				<pre id="logs" class="logs">No logs yet. Start an automation to see activity here.</pre>
+			</div>
+		</section>
+
+		<!-- ============ LIBRARY ============ -->
+		<section class="panel" id="tab-library">
+			<div class="card">
+				<input type="search" id="librarySearch" placeholder="Search results by prompt…" />
+				<div class="btn-row">
+					<button id="exportCsv" class="ghost">Export CSV</button>
+					<button id="exportJson" class="ghost">Export JSON</button>
+					<button id="clearLibrary" class="ghost">Clear</button>
+				</div>
+				<div class="library" id="library"></div>
+			</div>
+		</section>
+
+		<footer class="foot">
+			<button id="reportBug" class="ghost sm">Report Bug</button>
+			<button id="clearCache" class="ghost sm">Clear Cache</button>
+			<button id="clearPrompts" class="ghost sm">Clear</button>
+			<button id="pauseBtn" class="ghost sm hidden">Pause</button>
+			<button id="stopBtn" class="danger sm hidden">Stop</button>
+			<button id="runBtn" class="primary run">▶ Run</button>
+		</footer>
 
 		<script type="module" src="panel.js"></script>
 	</body>

@@ -6,16 +6,7 @@
 // visibility, and relationship to each other. It is used as a fallback whenever
 // the configured selectors miss, and its findings are reported by probe().
 
-const SEND_WORDS = [
-	"send",
-	"submit",
-	"generate",
-	"create",
-	"run",
-	"g\u1eedi",
-	"发送",
-	"生成",
-]
+const SEND_WORDS = ["send", "submit", "generate", "create", "run", "g\u1eedi", "\u53d1\u9001", "\u751f\u6210"]
 
 function visible(el) {
 	if (!el || !el.getBoundingClientRect) return false
@@ -98,7 +89,7 @@ export function findFileInput() {
 	return inputs.find((el) => /image|video|\*/i.test(el.accept || "*")) || inputs[0]
 }
 
-/** Media large enough to be a generated result, sorted newest-looking first. */
+/** Media large enough to be a generated result, sorted top-down. */
 export function findResultMedia(minSize = 220) {
 	return [...document.querySelectorAll("video, img")]
 		.filter((el) => {
@@ -123,7 +114,7 @@ export function findDownloadButton(scope) {
 		if (direct && visible(direct)) return direct
 		const byText = node.querySelectorAll
 			? [...node.querySelectorAll('button, [role="button"], a')].find((el) =>
-					/download|save|t\u1ea3i|下载/i.test(label(el))
+					/download|save|t\u1ea3i|\u4e0b\u8f7d/i.test(label(el))
 			  )
 			: null
 		if (byText && visible(byText)) return byText
