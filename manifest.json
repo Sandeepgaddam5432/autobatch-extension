@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "AutoBatch — Bulk AI Media Automation",
+  "version": "0.1.0",
+  "description": "Batch-run prompts and auto-download results on Meta.ai. Open source, runs 100% locally, no data collection.",
+  "permissions": ["storage", "downloads", "sidePanel", "tabs"],
+  "host_permissions": ["https://www.meta.ai/*", "https://meta.ai/*"],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Open AutoBatch"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.meta.ai/*", "https://meta.ai/*"],
+      "js": ["src/content/content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/adapters/*.js", "src/core/*.js", "src/registry.js"],
+      "matches": ["https://www.meta.ai/*", "https://meta.ai/*"]
+    }
+  ]
+}
