@@ -1,74 +1,142 @@
-# AutoBatch — Bulk AI Media Automation
+# UnQ Automation
 
-Open-source Chrome extension that batch-runs prompts on AI media sites and
-auto-downloads every result. Built adapter-first so one extension covers many
-platforms instead of one paid extension per site.
+Open-source bulk prompt automation for AI image & video sites. One extension, many
+platforms, no build step, MIT licensed.
 
-- **Runs 100% locally.** No backend, no accounts, no telemetry.
-- **MIT licensed.** Every competitor in this category is closed source.
-- **No build step.** Load the repo unpacked and it works.
+Every comparable tool in this category (Meta AI Automation, Veo Automation, Grok
+Automation, Autojourney, BulkyGen, …) is closed source and mostly paid. UnQ is the
+open alternative: the same batch workflow, with the engine and every selector
+readable and forkable.
 
-> Status: **v0.1 — Meta.ai adapter, needs selector verification on a live page.**
-> See `STATE.md`.
-
-## Install (unpacked, for testing)
+## Install (unpacked)
 
 1. `git clone https://github.com/Sandeepgaddam5432/autobatch-extension`
-2. Open `chrome://extensions` → enable **Developer mode**
-3. **Load unpacked** → select the cloned folder
-4. Open <https://www.meta.ai/> and sign in
-5. Click the AutoBatch toolbar icon → side panel opens
-6. Click **Probe** first. It reports whether the composer / send button / media
-   selectors currently match. All good → paste prompts → **Run**
+2. Open `chrome://extensions`, enable **Developer mode**
+3. **Load unpacked** → select the folder
+4. Open a supported site, click the toolbar icon → side panel opens
+5. Click **Probe** first to verify the selectors match the live DOM
+
+## Supported platforms
+
+| Platform | Adapter | Modes |
+| --- | --- | --- |
+| Meta.ai | `src/adapters/meta.js` | t2i, t2v, i2i, i2v |
+| Google Labs Flow (Veo) | `src/adapters/flow.js` | t2v, i2v, f2v, t2i |
+| Grok | `src/adapters/grok.js` | t2i, t2v, i2i |
+| Gemini | `src/adapters/gemini.js` | t2i, i2i, t2v |
+| ChatGPT / Sora | `src/adapters/chatgpt.js` | t2i, i2i |
+| Qwen | `src/adapters/qwen.js` | t2i, t2v, i2i |
+
+Adding a platform = one adapter file + one registry line + one host in the manifest.
+Core code never changes.
+
+## Features
+
+**Prompts**
+
+- Blank-line prompt blocks, `.txt` / `.csv` / `.tsv` import
+- CSV per-row overrides: `prompt, image, ratio, mode, outputs`
+- `{{variable}}` templates with cartesian expansion
+- Prefix / suffix, repeat each prompt N times, shuffle, de-duplicate
+
+**Images**
+
+- Multi-image upload for image-to-image / image-to-video
+- Pairing modes: 1→1, one image → all prompts, all images → each prompt, first+last frame
+
+**Queue engine**
+
+- Concurrency lanes with staggered starts
+- Randomised delay range (min–max) instead of a fixed, bot-like interval
+- Retries with backoff, per-item retry, retry-all-failed, abort after N consecutive failures
+- Pause / resume / stop, live per-item status, progress bar and ETA
+- Queue snapshot persisted, so a crash does not lose the remaining prompts
+
+**Downloads**
+
+- Auto-download with guaranteed sequential numbering (`0001`, `0002`, …)
+- Filename templates: `{n}` `{index}` `{slot}` `{slug}` `{date}` `{time}` `{mode}` `{ratio}` `{platform}`
+- Folder per project, per date, per run
+- Duplicate skipping, blob relay for in-page media, fallback to the site's own download button
+
+**Scheduling & safety**
+
+- Time window (supports wrapping past midnight)
+- Daily generation cap with usage counter
+- Per-item timeout
+
+**Reliability**
+
+- Offscreen 1s heartbeat keeps runs alive in background tabs and minimised windows
+  — the single most common failure of every tool in this category
+- Remote `selectors.json` config: when a site changes its UI, publishing new
+  selectors fixes all users instantly with no update. See `selectors.example.json`
+
+**Workspace**
+
+- 4-tab side panel: Run / Queue / Library / Settings
+- Result library with search and CSV / JSON export
+- Settings import / export, dark & light theme, pop-out window
+- UI in English, తెలుగు, हिन्दी, Tiếng Việt, Español, 中文
+- Desktop notification on completion
 
 ## Architecture
 
 ```
+manifest.json
 src/
-  core/          platform-agnostic engine (no site knowledge at all)
-    pool.js      concurrency + delay + retry
-    runner.js    submit -> poll -> collect -> download pipeline
-    prompts.js   blank-line prompt parsing
-    storage.js   settings
+  core/            platform-agnostic engine (knows nothing about any site)
+    pool.js        concurrency, delay, retry, pause, gate
+    runner.js      snapshot → submit → poll → download → library
+    prompts.js     parsing, variables, pairing
+    filename.js    filename token engine
+    schedule.js    time windows, daily caps
+    storage.js     settings, counters, library, queue snapshot
+    selectors.js   remote selector config
+    ticker.js      throttle-proof sleep
   adapters/
-    meta.js      ALL Meta.ai-specific DOM logic lives here
-  registry.js    URL -> adapter mapping
-  content/       bridge: loads adapter + runner into the page
-  sidepanel/     UI (queue monitor, settings)
-  background.js  chrome.downloads service worker
+    base.js        adapter factory: everything generic lives here
+    meta.js flow.js grok.js gemini.js chatgpt.js qwen.js
+  content/         page bridge
+  offscreen/       1s heartbeat
+  sidepanel/       UI
+  background.js    downloads, notifications, tick relay
+registry.js        URL → adapter
+_locales/          6 languages
 ```
 
-### Adding a platform
+## Adapter contract
 
-1. Create `src/adapters/<id>.js` implementing the contract below
-2. Add one entry to `src/registry.js`
-3. Add the host to `manifest.json` (`host_permissions`, `content_scripts`,
-   `web_accessible_resources`)
+| Method | Purpose |
+| --- | --- |
+| `isReady()` | composer present, signed in |
+| `setMode(mode)` | switch t2i / t2v / i2i / i2v / f2v |
+| `setAspectRatio(ratio)` | pick the ratio control |
+| `attachImages(images)` | inject files into the page input |
+| `snapshotResults()` | media URLs before submitting |
+| `submitPrompt(text, images)` | type + send |
+| `waitForResults({ before, expected })` | diff until new media is stable |
+| `clickDownload(url)` | fallback to the site's own download button |
+| `probe()` | selector health check |
 
-Core code is never touched.
+`base.js` implements all of it; a platform file only supplies selectors and label
+maps, and may override any method.
 
-### Adapter contract
+## Fixing a broken selector
 
-| Member | Required | Purpose |
-| :--- | :--- | :--- |
-| `id`, `label`, `modes`, `aspectRatios` | yes | metadata for the UI |
-| `isReady()` | yes | resolve once the page is usable / logged in |
-| `snapshotResults()` | yes | `Set` of media URLs already on the page |
-| `submitPrompt(text, image)` | yes | type + send one prompt |
-| `waitForResults({ before, expected, timeoutMs, shouldStop })` | yes | resolve with new result URLs |
-| `setMode(mode)` | no | switch generation mode (best effort) |
-| `setAspectRatio(ratio)` | no | best effort |
-| `attachImage(dataUrl, name)` | no | for image-to-\* modes |
-| `clickDownload(url)` | no | fallback when a blob is too large to relay |
-| `probe()` | no | selector health report for debugging |
+1. Open the site, run `window.__UNQ__.probe()` in the console
+2. Any `false` value points to the selector list to fix in that platform's adapter
+3. Nothing else in the codebase needs to change
 
 ## Roadmap
 
-- **v0.1** Meta.ai, text-to-image / text-to-video, auto-download ← *here*
-- **v0.2** Google Labs Flow adapter (proves the abstraction), image-to-\* modes
-- **v0.3** Grok + ChatGPT/Sora adapters, remote selector config, Firefox build
+- v0.3 — Seedance / Dreamina, Vibes, Canva adapters; `optional_host_permissions` flow; Firefox build
+- v0.4 — prompt library with tags, watermark-free source picking, webhook on completion
 
-## Disclaimer
+## Legal
 
-Independent tool, not affiliated with Meta, Google, xAI, or OpenAI. Use in
-accordance with each platform's terms of service.
+UnQ automates the UI you are already signed in to. Respect each platform's terms of
+service and rate limits. It contains no reverse-engineered or decompiled code from
+any other extension.
+
+MIT © Sandeepgaddam5432

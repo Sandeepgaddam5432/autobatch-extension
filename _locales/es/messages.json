@@ -1,0 +1,19 @@
+{
+	"extDescription": { "message": "Automatización de prompts en lote para sitios de imágenes y vídeo con IA: cola, reintentos, descarga automática." },
+	"tabRun": { "message": "Ejecutar" },
+	"tabQueue": { "message": "Cola" },
+	"tabLibrary": { "message": "Biblioteca" },
+	"tabSettings": { "message": "Ajustes" },
+	"prompts": { "message": "Prompts" },
+	"promptTools": { "message": "Herramientas de prompt" },
+	"sourceImages": { "message": "Imágenes de origen" },
+	"mode": { "message": "Modo" },
+	"ratio": { "message": "Relación de aspecto" },
+	"run": { "message": "Ejecutar" },
+	"pause": { "message": "Pausar" },
+	"stop": { "message": "Detener" },
+	"probe": { "message": "Sondear" },
+	"downloads": { "message": "Descargas" },
+	"scheduling": { "message": "Programación y límites" },
+	"reliability": { "message": "Fiabilidad" }
+}

@@ -1,0 +1,19 @@
+{
+	"extDescription": { "message": "AI చిత్రాలు మరియు విడియోల కొరకు బల్క్ ప్రాంప్ట్ ఆటోమేషన్ — క్యూ, రిట్రీ, ఆటో డౌన్లోడ్." },
+	"tabRun": { "message": "రన్" },
+	"tabQueue": { "message": "క్యూ" },
+	"tabLibrary": { "message": "లొబ్రరీ" },
+	"tabSettings": { "message": "సెట్టింగ్స్" },
+	"prompts": { "message": "ప్రాంప్ట్స్" },
+	"promptTools": { "message": "ప్రాంప్ట్ టూల్స్" },
+	"sourceImages": { "message": "సోర్స్ చిత్రాలు" },
+	"mode": { "message": "మోడ్" },
+	"ratio": { "message": "ఆస్పెక్ట్ రేషియో" },
+	"run": { "message": "మొదలు" },
+	"pause": { "message": "పాజ్" },
+	"stop": { "message": "ఆగు" },
+	"probe": { "message": "ప్రోబ్" },
+	"downloads": { "message": "డౌన్లోడ్స్" },
+	"scheduling": { "message": "షెడ్యూల్ మరియు పరిమితులు" },
+	"reliability": { "message": "విశ్వసనీయత" }
+}

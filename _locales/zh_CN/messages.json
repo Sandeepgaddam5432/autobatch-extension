@@ -1,0 +1,19 @@
+{
+	"extDescription": { "message": "为 AI 图片与视频网站提供批量提示词自动化：队列、重试、自动下载。" },
+	"tabRun": { "message": "运行" },
+	"tabQueue": { "message": "队列" },
+	"tabLibrary": { "message": "媒体库" },
+	"tabSettings": { "message": "设置" },
+	"prompts": { "message": "提示词" },
+	"promptTools": { "message": "提示词工具" },
+	"sourceImages": { "message": "源图片" },
+	"mode": { "message": "模式" },
+	"ratio": { "message": "画面比例" },
+	"run": { "message": "开始" },
+	"pause": { "message": "暂停" },
+	"stop": { "message": "停止" },
+	"probe": { "message": "检测" },
+	"downloads": { "message": "下载" },
+	"scheduling": { "message": "计划与限额" },
+	"reliability": { "message": "稳定性" }
+}

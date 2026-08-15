@@ -1,0 +1,19 @@
+{
+	"extDescription": { "message": "AI इमेज और वीडियो साइट्स के लिए बल्क प्रॉम्प्ट ऑटोमेशन — क्यू, रीट्राय, ऑटो डाउनलोड।" },
+	"tabRun": { "message": "रन" },
+	"tabQueue": { "message": "क्यू" },
+	"tabLibrary": { "message": "लाइब्रेरी" },
+	"tabSettings": { "message": "सेटिंग्स" },
+	"prompts": { "message": "प्रॉम्प्ट्स" },
+	"promptTools": { "message": "प्रॉम्प्ट टूल्स" },
+	"sourceImages": { "message": "सोर्स इमेजेस" },
+	"mode": { "message": "मोड" },
+	"ratio": { "message": "आस्पेक्ट रेश्यो" },
+	"run": { "message": "शुरू करें" },
+	"pause": { "message": "रोकें" },
+	"stop": { "message": "बंद" },
+	"probe": { "message": "प्रोब" },
+	"downloads": { "message": "डाउनलोड्स" },
+	"scheduling": { "message": "शेड्यूल और लिमिट" },
+	"reliability": { "message": "विश्वसनीयता" }
+}

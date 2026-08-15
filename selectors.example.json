@@ -1,0 +1,13 @@
+{
+	"version": 1,
+	"updated": "2026-08-16",
+	"platforms": {
+		"meta": {
+			"composer": ["div[contenteditable=\"true\"]", "[role=\"textbox\"]"],
+			"sendButton": ["button[aria-label*=\"Send\" i]"],
+			"media": ["video", "img"],
+			"downloadButton": ["a[download]", "button[aria-label*=\"Download\" i]"],
+			"fileInput": ["input[type=\"file\"]"]
+		}
+	}
+}

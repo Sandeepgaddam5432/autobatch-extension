@@ -1,0 +1,19 @@
+{
+	"extDescription": { "message": "Bulk prompt automation for AI image & video sites: queue, retries, auto-download, scheduling. Open source." },
+	"tabRun": { "message": "Run" },
+	"tabQueue": { "message": "Queue" },
+	"tabLibrary": { "message": "Library" },
+	"tabSettings": { "message": "Settings" },
+	"prompts": { "message": "Prompts" },
+	"promptTools": { "message": "Prompt tools" },
+	"sourceImages": { "message": "Source images" },
+	"mode": { "message": "Mode" },
+	"ratio": { "message": "Aspect ratio" },
+	"run": { "message": "Run" },
+	"pause": { "message": "Pause" },
+	"stop": { "message": "Stop" },
+	"probe": { "message": "Probe" },
+	"downloads": { "message": "Downloads" },
+	"scheduling": { "message": "Scheduling & limits" },
+	"reliability": { "message": "Reliability" }
+}

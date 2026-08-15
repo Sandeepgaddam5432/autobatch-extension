@@ -1,0 +1,19 @@
+{
+	"extDescription": { "message": "Tự động hóa prompt hàng loạt cho các trang AI ảnh & video — hàng đợi, thử lại, tải tự động." },
+	"tabRun": { "message": "Chạy" },
+	"tabQueue": { "message": "Hàng đợi" },
+	"tabLibrary": { "message": "Thư viện" },
+	"tabSettings": { "message": "Cài đặt" },
+	"prompts": { "message": "Prompt" },
+	"promptTools": { "message": "Công cụ prompt" },
+	"sourceImages": { "message": "Ảnh nguồn" },
+	"mode": { "message": "Chế độ" },
+	"ratio": { "message": "Tỷ lệ khung" },
+	"run": { "message": "Chạy" },
+	"pause": { "message": "Tạm dừng" },
+	"stop": { "message": "Dẻng" },
+	"probe": { "message": "Kiểm tra" },
+	"downloads": { "message": "Tải xuống" },
+	"scheduling": { "message": "Lên lịch & giỡi hạn" },
+	"reliability": { "message": "Độ tin cậy" }
+}
