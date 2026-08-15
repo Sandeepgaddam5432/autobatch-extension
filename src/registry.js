@@ -1,10 +1,12 @@
-// URL -> adapter mapping. Adding a platform = one entry here + one adapter file.
+// URL -> adapter mapping. Adding a platform = one entry here + one adapter
+// file + the host in manifest.json. Core code is never touched.
 export const ADAPTERS = [
-	{ id: "meta", label: "Meta.ai", match: /^https:\/\/(www\.)?meta\.ai\//i, path: "src/adapters/meta.js" },
-	// v0.3 roadmap:
-	// { id: "flow",    label: "Google Labs Flow", match: /^https:\/\/labs\.google\//i,  path: "src/adapters/flow.js" },
-	// { id: "grok",    label: "Grok",             match: /^https:\/\/grok\.com\//i,      path: "src/adapters/grok.js" },
-	// { id: "chatgpt", label: "ChatGPT / Sora",   match: /^https:\/\/chatgpt\.com\//i,   path: "src/adapters/chatgpt.js" },
+	{ id: "meta", label: "Meta.ai", match: /^https:\/\/([a-z0-9-]+\.)?meta\.ai\//i, path: "src/adapters/meta.js" },
+	{ id: "flow", label: "Google Labs Flow", match: /^https:\/\/labs\.google\//i, path: "src/adapters/flow.js" },
+	{ id: "grok", label: "Grok", match: /^https:\/\/grok\.com\//i, path: "src/adapters/grok.js" },
+	{ id: "gemini", label: "Gemini", match: /^https:\/\/gemini\.google\.com\//i, path: "src/adapters/gemini.js" },
+	{ id: "chatgpt", label: "ChatGPT / Sora", match: /^https:\/\/chatgpt\.com\//i, path: "src/adapters/chatgpt.js" },
+	{ id: "qwen", label: "Qwen", match: /^https:\/\/chat\.qwen\.ai\//i, path: "src/adapters/qwen.js" },
 ]
 
 export function findAdapterMeta(href) {

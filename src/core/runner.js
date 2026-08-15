@@ -1,27 +1,23 @@
-import { runPool } from "./pool.js"
+import { Pool } from "./pool.js"
+import { sleepAwake } from "./ticker.js"
+import { renderFilename } from "./filename.js"
+import { makeGate } from "./schedule.js"
+import {
+	nextCounter,
+	addLibraryEntries,
+	bumpDailyUsage,
+	getDailyUsage,
+	saveQueueSnapshot,
+	clearQueueSnapshot,
+} from "./storage.js"
 
-function extFromUrl(url, fallback) {
-	const match = /\.(mp4|webm|mov|jpg|jpeg|png|webp|gif)(\?|$)/i.exec(url || "")
-	return match ? match[1].toLowerCase() : fallback
-}
-
-function buildFilename({ folder, index, slot, url, mode }) {
-	const isVideo = mode === "t2v" || mode === "i2v"
-	const ext = extFromUrl(url, isVideo ? "mp4" : "png")
-	const n = String(index + 1).padStart(4, "0")
-	const s = slot > 0 ? `_${slot + 1}` : ""
-	const safeFolder = (folder || "autobatch").replace(/[^a-z0-9-_ ]/gi, "").trim()
-	return `${safeFolder || "autobatch"}/${n}${s}.${ext}`
-}
+const MAX_RELAY_BYTES = 25 * 1024 * 1024
 
 async function toDownloadableUrl(url) {
 	if (!/^blob:/i.test(url)) return url
-	// chrome.downloads (in the service worker) cannot read a page's blob: URL,
-	// so relay small results as data: URLs. Large videos fall back to the
-	// site's own download control via adapter.clickDownload().
-	const response = await fetch(url)
-	const blob = await response.blob()
-	if (blob.size > 25 * 1024 * 1024) throw new Error("BLOB_TOO_LARGE")
+	// The service worker cannot read a page blob, so relay it as a data URL.
+	const blob = await (await fetch(url)).blob()
+	if (blob.size > MAX_RELAY_BYTES) throw new Error("BLOB_TOO_LARGE")
 	return await new Promise((resolve, reject) => {
 		const reader = new FileReader()
 		reader.onload = () => resolve(reader.result)
@@ -35,24 +31,46 @@ export class Runner {
 		this.adapter = adapter
 		this.config = config
 		this.onEvent = onEvent || (() => {})
-		this.stopped = false
+		this.pool = null
+		this.seenUrls = new Set()
+		this.stats = { total: 0, done: 0, failed: 0, downloaded: 0, startedAt: 0 }
+		this.runScope = `${config.folder || "UnQ"}:${config.resetNumbering ? Date.now() : "global"}`
 	}
 
 	emit(type, payload = {}) {
 		try {
-			this.onEvent({ type, at: Date.now(), ...payload })
+			this.onEvent({ type, at: Date.now(), stats: { ...this.stats }, ...payload })
 		} catch (err) {
 			/* panel closed */
 		}
 	}
 
+	get stopped() {
+		return !this.pool || this.pool.stopped
+	}
+
 	stop() {
-		this.stopped = true
+		if (this.pool) this.pool.stop()
+	}
+
+	pause() {
+		if (this.pool) this.pool.pause()
+	}
+
+	resume() {
+		if (this.pool) this.pool.resume()
+	}
+
+	retryItem(job) {
+		if (this.pool) this.pool.requeue(job)
 	}
 
 	async start() {
 		const config = this.config
-		this.emit("run:started", { total: config.prompts.length, adapter: this.adapter.id })
+		this.stats.total = config.jobs.length
+		this.stats.startedAt = Date.now()
+		this.emit("run:started", { total: config.jobs.length, adapter: this.adapter.id })
+
 		try {
 			await this.adapter.isReady()
 			if (this.adapter.setMode) await this.adapter.setMode(config.mode)
@@ -64,65 +82,141 @@ export class Runner {
 			return
 		}
 
-		const items = config.prompts.map((text, index) => ({ index, text }))
-		await runPool({
-			items,
+		this.pool = new Pool({
+			items: config.jobs,
 			concurrency: config.concurrency,
-			delayMs: config.delayMs,
+			delayMinMs: config.delayMinMs,
+			delayMaxMs: config.delayMaxMs,
 			maxRetries: config.maxRetries,
-			shouldStop: () => this.stopped,
-			onEvent: (event) => this.emit(event.type, event),
-			worker: (item) => this.processOne(item),
+			stopOnConsecutiveFailures: config.stopOnConsecutiveFailures,
+			gate: makeGate({ settings: config, getDaily: getDailyUsage }),
+			worker: (job) => this.processOne(job),
+			onEvent: (event) => {
+				if (event.type === "item:done") this.stats.done += 1
+				if (event.type === "item:failed") this.stats.failed += 1
+				this.emit(event.type, event)
+				this.persist()
+			},
 		})
-		this.emit(this.stopped ? "run:stopped" : "run:finished")
+
+		await this.pool.run()
+		await clearQueueSnapshot()
+		const finished = this.pool.stopped ? "run:stopped" : "run:finished"
+		this.emit(finished, { elapsedMs: Date.now() - this.stats.startedAt })
+
+		if (config.notifyOnFinish) {
+			chrome.runtime.sendMessage({
+				type: "UNQ_NOTIFY",
+				title: "UnQ Automation",
+				message: `${this.stats.done}/${this.stats.total} done · ${this.stats.downloaded} saved${
+					this.stats.failed ? ` · ${this.stats.failed} failed` : ""
+				}`,
+			})
+		}
+		chrome.runtime.sendMessage({ type: "UNQ_RUN_STATE", running: false })
 	}
 
-	async processOne(item) {
-		const config = this.config
-		this.emit("item:submitting", { index: item.index, text: item.text })
-		const before = await this.adapter.snapshotResults()
-		await this.adapter.submitPrompt(item.text, config.image || null)
+	persist() {
+		saveQueueSnapshot({
+			at: Date.now(),
+			platform: this.adapter.id,
+			pending: this.pool ? this.pool.queue.map((job) => job.text) : [],
+			stats: this.stats,
+		}).catch(() => {})
+	}
 
-		this.emit("item:generating", { index: item.index })
+	async processOne(job) {
+		const config = this.config
+		const mode = job.mode || config.mode
+		const ratio = job.aspectRatio || config.aspectRatio
+		const expected = job.outputsPerPrompt || config.outputsPerPrompt || 1
+
+		if (job.mode && this.adapter.setMode) await this.adapter.setMode(mode)
+		if (job.aspectRatio && this.adapter.setAspectRatio) await this.adapter.setAspectRatio(ratio)
+
+		this.emit("item:submitting", { index: job.index, text: job.text })
+		const before = await this.adapter.snapshotResults()
+		await this.adapter.submitPrompt(job.text, job.images || null)
+		await bumpDailyUsage(1)
+
+		this.emit("item:generating", { index: job.index })
 		const urls = await this.adapter.waitForResults({
 			before,
-			expected: config.outputsPerPrompt || 1,
+			expected,
 			timeoutMs: config.timeoutMs,
 			shouldStop: () => this.stopped,
 		})
-		this.emit("item:generated", { index: item.index, count: urls.length })
+		this.emit("item:generated", { index: job.index, count: urls.length })
 
-		if (config.autoDownload && urls.length) {
-			let saved = 0
-			for (let slot = 0; slot < urls.length; slot += 1) {
+		const entries = []
+		let saved = 0
+
+		for (let slot = 0; slot < urls.length; slot += 1) {
+			const sourceUrl = urls[slot]
+			if (config.skipDuplicates && this.seenUrls.has(sourceUrl)) continue
+			this.seenUrls.add(sourceUrl)
+
+			let filename = ""
+			if (config.autoDownload) {
+				const subfolders = []
+				if (config.folderPerDate) subfolders.push(new Date().toISOString().slice(0, 10))
+				if (config.folderPerRun) subfolders.push(`run-${String(this.stats.startedAt).slice(-6)}`)
+				const counter = await nextCounter(this.runScope, config.startIndex)
+				filename = renderFilename({
+					template: config.filenameTemplate,
+					counter,
+					index: job.index,
+					slot,
+					prompt: job.text,
+					mode,
+					ratio,
+					platform: this.adapter.id,
+					url: sourceUrl,
+					folder: config.folder,
+					subfolders,
+				})
 				try {
-					const url = await toDownloadableUrl(urls[slot])
-					const filename = buildFilename({
-						folder: config.folder,
-						index: item.index,
-						slot,
-						url: urls[slot],
-						mode: config.mode,
+					const relayUrl = await toDownloadableUrl(sourceUrl)
+					const reply = await chrome.runtime.sendMessage({
+						type: "UNQ_DOWNLOAD",
+						url: relayUrl,
+						filename,
 					})
-					const reply = await chrome.runtime.sendMessage({ type: "AB_DOWNLOAD", url, filename })
 					if (!reply || !reply.ok) throw new Error((reply && reply.error) || "download failed")
 					saved += 1
 				} catch (err) {
+					let handled = false
 					if (this.adapter.clickDownload) {
-						const clicked = await this.adapter.clickDownload(urls[slot])
-						if (clicked) {
-							saved += 1
-							continue
-						}
+						handled = await this.adapter.clickDownload(sourceUrl)
 					}
-					this.emit("item:downloadFailed", {
-						index: item.index,
-						error: String((err && err.message) || err),
-					})
+					if (handled) saved += 1
+					else
+						this.emit("item:downloadFailed", {
+							index: job.index,
+							error: String((err && err.message) || err),
+						})
 				}
 			}
-			this.emit("item:downloaded", { index: item.index, count: saved })
+
+			entries.push({
+				id: `${Date.now()}-${job.index}-${slot}`,
+				ts: Date.now(),
+				platform: this.adapter.id,
+				mode,
+				ratio,
+				prompt: job.text,
+				filename,
+				url: /^blob:|^data:/i.test(sourceUrl) ? "" : sourceUrl,
+				pageUrl: location.href,
+			})
 		}
+
+		this.stats.downloaded += saved
+		if (entries.length) await addLibraryEntries(entries)
+		if (config.autoDownload) this.emit("item:downloaded", { index: job.index, count: saved })
+
+		// small settle pause so the next submit does not race the UI
+		await sleepAwake(400)
 		return urls
 	}
 }
