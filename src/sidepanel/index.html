@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>AutoBatch</title>
+		<link rel="stylesheet" href="panel.css" />
+	</head>
+	<body>
+		<header>
+			<h1>AutoBatch</h1>
+			<span id="status" class="pill pill-idle">detecting…</span>
+		</header>
+
+		<section>
+			<label for="prompts">Prompts <small>(separate each with a blank line)</small></label>
+			<textarea id="prompts" rows="8" placeholder="A neon cyberpunk alley in the rain.&#10;&#10;A koi pond under cherry blossoms."></textarea>
+			<div class="row">
+				<input type="file" id="promptFile" accept=".txt,.csv" />
+				<span id="promptCount" class="muted">0 prompts</span>
+			</div>
+		</section>
+
+		<section class="grid">
+			<div>
+				<label for="mode">Mode</label>
+				<select id="mode">
+					<option value="t2i">Text → Image</option>
+					<option value="t2v">Text → Video</option>
+				</select>
+			</div>
+			<div>
+				<label for="aspectRatio">Aspect ratio</label>
+				<select id="aspectRatio">
+					<option value="1:1">1:1</option>
+					<option value="16:9">16:9</option>
+					<option value="9:16">9:16</option>
+				</select>
+			</div>
+			<div>
+				<label for="concurrency">Concurrent</label>
+				<input type="number" id="concurrency" min="1" max="5" />
+			</div>
+			<div>
+				<label for="delayMs">Delay (ms)</label>
+				<input type="number" id="delayMs" min="0" step="500" />
+			</div>
+			<div>
+				<label for="outputsPerPrompt">Outputs / prompt</label>
+				<input type="number" id="outputsPerPrompt" min="1" max="8" />
+			</div>
+			<div>
+				<label for="maxRetries">Max retries</label>
+				<input type="number" id="maxRetries" min="0" max="5" />
+			</div>
+		</section>
+
+		<section>
+			<label for="folder">Save to folder</label>
+			<input type="text" id="folder" placeholder="autobatch" />
+			<label class="check"><input type="checkbox" id="autoDownload" /> Auto-download results</label>
+		</section>
+
+		<section class="actions">
+			<button id="run" class="primary">Run</button>
+			<button id="stop">Stop</button>
+			<button id="probe" title="Check that selectors still match the page">Probe</button>
+		</section>
+
+		<section>
+			<div class="bar"><div id="barFill"></div></div>
+			<div id="summary" class="muted">idle</div>
+			<ul id="queue"></ul>
+			<pre id="log"></pre>
+		</section>
+
+		<script type="module" src="panel.js"></script>
+	</body>
+</html>
