@@ -1,23 +1,49 @@
 {
   "manifest_version": 3,
-  "name": "AutoBatch — Bulk AI Media Automation",
-  "version": "0.1.0",
-  "description": "Batch-run prompts and auto-download results on Meta.ai. Open source, runs 100% locally, no data collection.",
-  "permissions": ["storage", "downloads", "sidePanel", "tabs"],
-  "host_permissions": ["https://www.meta.ai/*", "https://meta.ai/*"],
+  "name": "UnQ Automation — Bulk AI Image & Video Studio",
+  "short_name": "UnQ Automation",
+  "version": "0.2.0",
+  "default_locale": "en",
+  "description": "__MSG_extDescription__",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "downloads",
+    "sidePanel",
+    "tabs",
+    "alarms",
+    "notifications",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "https://*.meta.ai/*",
+    "https://labs.google/*",
+    "https://grok.com/*",
+    "https://gemini.google.com/*",
+    "https://chatgpt.com/*",
+    "https://chat.qwen.ai/*"
+  ],
+  "optional_host_permissions": ["https://*/*"],
   "background": {
     "service_worker": "src/background.js",
     "type": "module"
   },
   "action": {
-    "default_title": "Open AutoBatch"
+    "default_title": "UnQ Automation"
   },
   "side_panel": {
     "default_path": "src/sidepanel/index.html"
   },
   "content_scripts": [
     {
-      "matches": ["https://www.meta.ai/*", "https://meta.ai/*"],
+      "matches": [
+        "https://*.meta.ai/*",
+        "https://labs.google/*",
+        "https://grok.com/*",
+        "https://gemini.google.com/*",
+        "https://chatgpt.com/*",
+        "https://chat.qwen.ai/*"
+      ],
       "js": ["src/content/content.js"],
       "run_at": "document_idle",
       "all_frames": false
@@ -26,7 +52,14 @@
   "web_accessible_resources": [
     {
       "resources": ["src/adapters/*.js", "src/core/*.js", "src/registry.js"],
-      "matches": ["https://www.meta.ai/*", "https://meta.ai/*"]
+      "matches": [
+        "https://*.meta.ai/*",
+        "https://labs.google/*",
+        "https://grok.com/*",
+        "https://gemini.google.com/*",
+        "https://chatgpt.com/*",
+        "https://chat.qwen.ai/*"
+      ]
     }
   ]
 }
