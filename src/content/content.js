@@ -18,11 +18,51 @@
 	applySelectorOverrides(adapter, await loadSelectorOverrides(settings.selectorConfigUrl))
 
 	let runner = null
+	let jobsByIndex = new Map()
+
 	const send = (message) => {
 		try {
 			chrome.runtime.sendMessage(message)
 		} catch (err) {
 			/* no receiver */
+		}
+	}
+
+	// The engine emits { type, ...payload }; the panel listens for
+	// { event, payload }. Normalise here so neither side has to guess.
+	const relay = (raw) => {
+		const { type, ...payload } = raw || {}
+		if (!type) return
+		send({ type: "UNQ_EVENT", event: type, payload })
+	}
+
+	const startRun = async (message) => {
+		const jobs = message.jobs || (message.config && message.config.jobs) || []
+		if (!jobs.length) {
+			relay({ type: "run:error", error: "no prompts were received by the page" })
+			relay({ type: "run:stopped" })
+			return
+		}
+
+		jobsByIndex = new Map(jobs.map((job) => [job.index, job]))
+		adapter.autoDetect = message.config.autoDetectSelectors !== false
+
+		runner = new Runner({
+			adapter,
+			// runner reads config.jobs, so the job list must live inside config
+			config: { ...message.config, jobs },
+			onEvent: relay,
+		})
+
+		send({ type: "UNQ_RUN_STATE", running: true })
+		try {
+			await runner.start()
+		} catch (err) {
+			// never fail silently: the panel must always learn why a run died
+			relay({ type: "run:error", error: String((err && err.stack) || (err && err.message) || err) })
+		} finally {
+			send({ type: "UNQ_RUN_STATE", running: false })
+			relay({ type: "run:stopped" })
 		}
 	}
 
@@ -48,14 +88,9 @@
 					reply({ ok: false, error: "already running" })
 					return true
 				}
-				runner = new Runner({
-					adapter,
-					config: message.config,
-					onEvent: (event) => send({ type: "UNQ_EVENT", event }),
-				})
-				send({ type: "UNQ_RUN_STATE", running: true })
-				runner.start()
-				reply({ ok: true })
+				// fire and forget: replying immediately keeps the port from closing
+				startRun(message)
+				reply({ ok: true, jobs: (message.jobs || []).length })
 				return true
 
 			case "UNQ_PAUSE":
@@ -74,10 +109,13 @@
 				reply({ ok: true })
 				return true
 
-			case "UNQ_RETRY_ITEM":
-				if (runner) runner.retryItem(message.job)
-				reply({ ok: true })
+			case "UNQ_RETRY_ITEM": {
+				// the panel knows row numbers, not job objects
+				const job = message.job || jobsByIndex.get(message.index)
+				if (runner && job) runner.retryItem(job)
+				reply({ ok: !!job })
 				return true
+			}
 
 			default:
 				return undefined
