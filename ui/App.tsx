@@ -22,6 +22,7 @@ import {
 	Settings2,
 	SlidersHorizontal,
 	Square,
+	Stethoscope,
 	Terminal,
 	Trash2,
 	Upload,
@@ -128,6 +129,9 @@ export function App() {
 	const [fileName, setFileName] = useState("")
 	const [notice, setNotice] = useState("")
 	const [library, setLibrary] = useState<any[]>([])
+	// kept in state so it can be read and copied, not flashed away in a toast
+	const [probeText, setProbeText] = useState("")
+	const [probing, setProbing] = useState(false)
 
 	const logRef = useRef<HTMLPreElement>(null)
 	const promptFileRef = useRef<HTMLInputElement>(null)
@@ -367,6 +371,57 @@ export function App() {
 	const logText = logs.length
 		? logs.map((entry) => `[${new Date(entry.at).toLocaleTimeString()}] ${entry.level} ${entry.line}`).join("\n")
 		: "No logs yet. Start a run to see activity here."
+
+	/**
+	 * Asks the content script what it can actually see on the page and keeps the
+	 * answer on screen. This is the report to share when a platform control or a
+	 * selector does not work.
+	 */
+	const runProbe = async () => {
+		if (!tabId) {
+			flash("No tab detected.")
+			return
+		}
+		setProbing(true)
+		try {
+			const reply = (await ping(tabId, true)) as any
+			const report = {
+				extension: version || "unknown",
+				platform: reply?.adapter || platform?.id || null,
+				connected: !!reply?.ok,
+				mode: settings.mode,
+				modes: reply?.modes || [],
+				optionKeys: (reply?.options || []).map((option: PlatformOption) => option.key),
+				chosenOptions,
+				probe: reply?.probe || null,
+			}
+			const text = JSON.stringify(report, null, 2)
+			setProbeText(text)
+			try {
+				await navigator.clipboard.writeText(text)
+				flash("Probe report copied. Paste it in the chat.")
+			} catch {
+				flash("Probe report is below. Use Copy report.")
+			}
+		} catch (err) {
+			setProbeText(`Probe failed: ${String((err as Error).message || err)}`)
+			flash("Probe failed. Reload the page tab and retry.")
+		} finally {
+			setProbing(false)
+		}
+	}
+
+	const copyEverything = async () => {
+		const text = [probeText ? `--- probe ---\n${probeText}` : "", `--- logs ---\n${logText}`]
+			.filter(Boolean)
+			.join("\n\n")
+		try {
+			await navigator.clipboard.writeText(text)
+			flash("Probe and logs copied.")
+		} catch {
+			flash("Copy blocked by the browser. Select the text manually.")
+		}
+	}
 
 	const downloadConfig = async () => {
 		const payload = JSON.stringify(await exportConfig(), null, 2)
@@ -1030,19 +1085,68 @@ export function App() {
 	/* ---------------- logs + library ---------------- */
 
 	const logsTab = (
-		<div className="animate-enter">
+		<div className="animate-enter space-y-2.5">
+			<Card>
+				<div className="mb-1 flex items-center justify-between">
+					<span className="text-[10.5px] font-bold tracking-[0.09em] text-ink-3">PAGE REPORT</span>
+					{probeText ? <Badge tone="accent">ready</Badge> : null}
+				</div>
+				<div className="flex flex-wrap gap-1.5">
+					<Button variant="primary" onClick={runProbe} disabled={probing}>
+						<Stethoscope size={12} /> {probing ? "Checking…" : "Probe this page"}
+					</Button>
+					{probeText ? (
+						<>
+							<Button
+								onClick={async () => {
+									try {
+										await navigator.clipboard.writeText(probeText)
+										flash("Report copied.")
+									} catch {
+										flash("Copy blocked. Select the text manually.")
+									}
+								}}
+							>
+								<Copy size={12} /> Copy report
+							</Button>
+							<Button onClick={copyEverything}>
+								<Copy size={12} /> Report + logs
+							</Button>
+							<Button variant="ghost" onClick={() => setProbeText("")}>
+								<X size={12} />
+							</Button>
+						</>
+					) : null}
+				</div>
+				{probeText ? (
+					<pre
+						className="m-0 mt-2.5 max-h-[300px] select-all overflow-auto rounded-[var(--radius-control)] border border-hairline bg-canvas p-2.5 text-[10.5px] leading-[1.7] whitespace-pre-wrap break-words text-ink-2"
+						style={{ fontFamily: "var(--font-mono)" }}
+					>
+						{probeText}
+					</pre>
+				) : (
+					<Hint>
+						Reports what the extension can see on the open page: composer, send button, file input, sign-in state,
+						how many results it found and which platform controls exist. Share this when a control does not work.
+					</Hint>
+				)}
+			</Card>
+
 			<Card>
 				<div className="mb-2.5 flex items-center justify-between">
 					<Badge>{logs.length} entries</Badge>
 					<div className="flex gap-1.5">
 						<Button
-							onClick={() => {
-								if (tabId) ping(tabId, true).then((reply) => flash(JSON.stringify(reply?.probe || {})))
+							onClick={async () => {
+								try {
+									await navigator.clipboard.writeText(logText)
+									flash("Logs copied.")
+								} catch {
+									flash("Copy blocked. Select the text manually.")
+								}
 							}}
 						>
-							Probe
-						</Button>
-						<Button onClick={() => navigator.clipboard.writeText(logText)}>
 							<Copy size={12} /> Copy
 						</Button>
 						<Button onClick={() => clearLogs().then(() => setLogs([]))}>
@@ -1053,7 +1157,7 @@ export function App() {
 				<Toggle title="Auto-scroll" checked={autoScroll} onChange={setAutoScroll} />
 				<pre
 					ref={logRef}
-					className="m-0 mt-2.5 max-h-[420px] overflow-auto rounded-[var(--radius-control)] border border-hairline bg-canvas p-2.5 text-[10.5px] leading-[1.7] whitespace-pre-wrap break-words text-ink-2"
+					className="m-0 mt-2.5 max-h-[420px] select-all overflow-auto rounded-[var(--radius-control)] border border-hairline bg-canvas p-2.5 text-[10.5px] leading-[1.7] whitespace-pre-wrap break-words text-ink-2"
 					style={{ fontFamily: "var(--font-mono)" }}
 				>
 					{logText}

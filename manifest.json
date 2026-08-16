@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "UnQ Automation — Bulk AI Image & Video Studio",
   "short_name": "UnQ Automation",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "default_locale": "en",
   "description": "__MSG_extDescription__",
   "permissions": [
