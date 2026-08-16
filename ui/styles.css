@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+/* =========================================================================
+   Design tokens.
+
+   The previous panel looked cheap for three fixable reasons: emoji icons,
+   saturated accent used on large fills, and no consistent scale. This system
+   fixes all three — one restrained accent used on small surfaces only, a 4px
+   spacing grid, a tight type scale, and hairline translucent borders instead
+   of solid grey lines. That combination is what reads as "premium".
+   ========================================================================= */
+
+@theme {
+	--color-canvas: #08090a;
+	--color-surface: #0f1113;
+	--color-surface-2: #16191d;
+	--color-elevated: #1c2025;
+
+	--color-hairline: rgba(255, 255, 255, 0.07);
+	--color-hairline-strong: rgba(255, 255, 255, 0.13);
+
+	--color-ink: #f4f6f8;
+	--color-ink-2: #b9c1cb;
+	--color-ink-3: #7d8792;
+
+	/* single accent, deliberately desaturated vs the old neon mint */
+	--color-accent: #3ee8a8;
+	--color-accent-2: #17c98c;
+	--color-accent-ink: #04231a;
+
+	--color-amber: #f0b23c;
+	--color-rose: #f2555a;
+
+	--radius-card: 12px;
+	--radius-control: 9px;
+
+	--font-sans: "Inter var", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+		sans-serif;
+	--font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+}
+
+@layer base {
+	html,
+	body,
+	#root {
+		height: 100%;
+	}
+
+	body {
+		margin: 0;
+		background: var(--color-canvas);
+		color: var(--color-ink);
+		font-family: var(--font-sans);
+		font-size: 13px;
+		line-height: 1.5;
+		-webkit-font-smoothing: antialiased;
+		text-rendering: optimizeLegibility;
+		font-feature-settings: "cv11", "ss01";
+	}
+
+	/* numbers must not jitter while a run updates counters */
+	.tnum {
+		font-variant-numeric: tabular-nums;
+	}
+
+	*:focus-visible {
+		outline: none;
+		box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-accent) 55%, transparent);
+		border-radius: 6px;
+	}
+
+	::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+
+	::-webkit-scrollbar-thumb {
+		background: var(--color-hairline-strong);
+		border-radius: 99px;
+	}
+
+	::-webkit-scrollbar-track {
+		background: transparent;
+	}
+}
+
+@layer utilities {
+	/* one subtle top highlight is enough to imply a lit surface */
+	.sheen {
+		background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 42%);
+	}
+
+	.grain::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		pointer-events: none;
+		background-image: radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+		background-size: 3px 3px;
+		opacity: 0.5;
+	}
+
+	@keyframes shimmer {
+		to {
+			transform: translateX(100%);
+		}
+	}
+
+	.animate-shimmer {
+		animation: shimmer 1.6s linear infinite;
+	}
+
+	@keyframes breathe {
+		50% {
+			opacity: 0.4;
+		}
+	}
+
+	.animate-breathe {
+		animation: breathe 2.2s ease-in-out infinite;
+	}
+
+	@keyframes enter {
+		from {
+			opacity: 0;
+			transform: translateY(4px);
+		}
+	}
+
+	.animate-enter {
+		animation: enter 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* {
+		animation: none !important;
+		transition: none !important;
+	}
+}
