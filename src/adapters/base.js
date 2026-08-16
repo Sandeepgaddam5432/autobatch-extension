@@ -159,6 +159,10 @@ export function createAdapter(spec) {
 		minMediaSize: spec.minMediaSize || 240,
 		autoDetect: true,
 		lastResolution: {},
+		// filled in by applyOptions so adapters can read the user's choices
+		chosen: {},
+		// last aspect ratio requested for this run
+		ratio: "",
 
 		/* ---- element resolution: selectors first, heuristics second ---- */
 
@@ -208,6 +212,9 @@ export function createAdapter(spec) {
 			const deadline = Date.now() + 25000
 			for (;;) {
 				if (this.composer()) break
+				if (this.selectors.loginWall && qs(this.selectors.loginWall)) {
+					throw new Error("sign in to this site first")
+				}
 				if (Date.now() > deadline) throw new Error("composer not found on this page")
 				await sleep(400)
 			}
@@ -225,6 +232,9 @@ export function createAdapter(spec) {
 
 		async setAspectRatio(ratio) {
 			if (!ratio) return false
+			// remembered so chat sites can express the ratio in the prompt instead
+			this.ratio = ratio
+			if (!this.aspectRatios.length && !this.selectors.ratioOpener) return false
 			if (this.selectors.ratioOpener) {
 				const opener = qs(this.selectors.ratioOpener)
 				if (opener) {
@@ -246,6 +256,8 @@ export function createAdapter(spec) {
 			if (!option || value === undefined || value === null || value === "" || value === "auto") return true
 			const choice = (option.values || []).find((item) => String(item.value) === String(value))
 			if (!choice) return false
+			// prompt-only options are applied by decoratePrompt, not by clicking
+			if (option.promptOnly) return true
 
 			let opened = false
 			if (option.opener) {
@@ -292,6 +304,7 @@ export function createAdapter(spec) {
 		 */
 		async applyOptions(config) {
 			const chosen = ((config && config.platformOptions) || {})[this.id] || {}
+			this.chosen = chosen
 			const applied = []
 			const missed = []
 			for (const option of this.options || []) {
@@ -323,7 +336,10 @@ export function createAdapter(spec) {
 			if (images && images.length) await this.attachImages(images)
 			const composer = this.composer()
 			if (!composer) throw new Error("composer not found")
-			await typeInto(composer, text)
+			// chat sites have no ratio or style controls, so the adapter may fold
+			// those choices into the prompt text instead
+			const finalText = this.decoratePrompt ? this.decoratePrompt(text) : text
+			await typeInto(composer, finalText)
 			await sleep(250)
 			const button = this.sendButton(composer)
 			const usable =
@@ -333,7 +349,7 @@ export function createAdapter(spec) {
 			await sleep(700)
 			// if the composer still holds the text, the click did not register
 			const leftover = (composer.value || composer.textContent || "").trim()
-			if (leftover && leftover === text.trim()) {
+			if (leftover && leftover === finalText.trim()) {
 				pressEnter(composer)
 				await sleep(600)
 			}
@@ -392,6 +408,7 @@ export function createAdapter(spec) {
 				composer: !!composer,
 				sendButton: !!send,
 				fileInput: !!this.fileInput(),
+				signedOut: !!(this.selectors.loginWall && qs(this.selectors.loginWall)),
 				mediaFound: urls.length,
 				resolvedBy: { ...this.lastResolution },
 				sample: urls.slice(0, 3).map((url) => url.slice(0, 90)),
@@ -401,6 +418,14 @@ export function createAdapter(spec) {
 	}
 
 	return Object.assign(adapter, spec.overrides || {})
+}
+
+/** Shared prompt decoration for chat sites without their own controls. */
+export function decorateWith(adapter, extras = []) {
+	const parts = []
+	if (adapter.chosen.ratioHint !== "off" && adapter.ratio) parts.push(`Aspect ratio ${adapter.ratio}.`)
+	for (const extra of extras) if (extra) parts.push(extra)
+	return parts
 }
 
 export function applySelectorOverrides(adapter, overrides) {
