@@ -6,14 +6,14 @@ name: Build side panel
 # on the target browser (an Android browser that installs an extension by
 # selecting a zip file):
 #
-# 1. manifest.json sits at the archive ROOT. GitHub's "Download ZIP" button
-#    nests everything under <repo>-main/, which such loaders reject.
+# 1. manifest.json sits at the archive ROOT.
 # 2. The panel stays at src/sidepanel/index.html - the path that loaded before.
-#    CI writes the compiled bundle there.
-# 3. Localization is all-or-nothing. _locales ships AND manifest declares
+# 3. Localization is all-or-nothing: _locales ships AND manifest declares
 #    default_locale. Either one alone makes Chromium refuse the install.
-# 4. The asset filename carries version and commit, so a cached download can
-#    never be mistaken for a newer build.
+# 4. The asset filename carries version and commit.
+# 5. Every icon the manifest declares must exist in the archive, otherwise
+#    Chromium refuses the install. CI builds them from the UnQ logo and fails
+#    before publishing if any is missing.
 
 on:
   push:
@@ -36,6 +36,9 @@ concurrency:
   group: build-panel
   cancel-in-progress: true
 
+env:
+  LOGO_URL: https://raw.githubusercontent.com/Sandeepgaddam5432/UnQWebTemplate/cf1e4a5999a700abca2dc280b027a166bdeb58a4/public/logo.svg
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -45,6 +48,51 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      # The UnQ logo is an SVG wrapper around an embedded PNG raster, so the
+      # icons need no image library: pull the base64 payload out of the SVG,
+      # then resize it when ImageMagick is present on the runner.
+      - name: Generate the extension icons from the UnQ logo
+        run: |
+          mkdir -p brand icons ui/public
+          curl -fsSL --retry 3 -o brand/unq-logo.svg "$LOGO_URL" || {
+            echo "::error::could not download the UnQ logo"
+            exit 1
+          }
+          cp brand/unq-logo.svg ui/public/logo.svg
+
+          cat > /tmp/extract-icon.cjs <<'NODE'
+          const fs = require("fs")
+          const svg = fs.readFileSync("brand/unq-logo.svg", "utf8")
+          const match = svg.match(/base64,([A-Za-z0-9+/=]+)/)
+          if (!match) {
+            console.error("::error::no embedded raster found in the logo")
+            process.exit(1)
+          }
+          const buf = Buffer.from(match[1], "base64")
+          const isPng = buf.slice(0, 8).toString("hex") === "89504e470d0a1a0a"
+          const hasEnd = buf.slice(-12).toString("hex").includes("49454e44ae426082")
+          if (!isPng || !hasEnd || buf.length < 3000) {
+            console.error("::error::decoded logo is not a complete PNG")
+            process.exit(1)
+          }
+          fs.writeFileSync("icons/icon-src.png", buf)
+          console.log("logo raster " + buf.readUInt32BE(16) + "x" + buf.readUInt32BE(20))
+          NODE
+          node /tmp/extract-icon.cjs
+
+          if command -v convert >/dev/null 2>&1; then
+            for size in 16 32 48 128; do
+              convert icons/icon-src.png -resize "${size}x${size}" "icons/icon${size}.png"
+            done
+          else
+            echo "ImageMagick unavailable, shipping the raster unresized"
+            for size in 16 32 48 128; do
+              cp icons/icon-src.png "icons/icon${size}.png"
+            done
+          fi
+          rm -f icons/icon-src.png
+          ls -l icons
 
       # no lockfile is committed, so install rather than ci
       - name: Install dependencies
@@ -82,11 +130,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A src/sidepanel
+          git add -A src/sidepanel icons brand ui/public
           if git diff --cached --quiet; then
             echo "No build changes."
           else
-            git commit -m "build: side panel bundle [skip ci]"
+            git commit -m "build: side panel bundle and UnQ icons [skip ci]"
             git push
           fi
 
@@ -103,12 +151,13 @@ jobs:
           rm -rf package ./*.zip
           mkdir -p package
 
-          # runtime files only, manifest at the archive root
           cp manifest.json package/
           cp -r src package/
           cp -r _locales package/
-          [ -d icons ] && cp -r icons package/
-          [ -f selectors.example.json ] && cp selectors.example.json package/
+          cp -r icons package/
+          if [ -f selectors.example.json ]; then
+            cp selectors.example.json package/
+          fi
 
           cd package
           zip -r "../$ZIP_NAME" . -x "*.DS_Store"
@@ -117,13 +166,11 @@ jobs:
 
       - name: Verify the archive layout
         run: |
-          # manifest at the root
           unzip -l "$ZIP_NAME" | grep -qE " manifest\\.json$" || {
             echo "::error::manifest.json is not at the archive root"
             exit 1
           }
 
-          # every manifest-referenced entry point is present
           for path in src/sidepanel/index.html src/background.js src/content/content.js; do
             unzip -l "$ZIP_NAME" | grep -qE " $path$" || {
               echo "::error::$path is missing from the archive"
@@ -131,21 +178,36 @@ jobs:
             }
           done
 
-          # the archived panel is the compiled one
+          node -e "
+            const fs = require('fs');
+            const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+            const paths = new Set();
+            for (const value of Object.values(manifest.icons || {})) paths.add(value);
+            const action = (manifest.action && manifest.action.default_icon) || {};
+            for (const value of Object.values(action)) paths.add(value);
+            fs.writeFileSync('/tmp/icon-paths.txt', [...paths].join('\n'));
+            console.log('declared icons: ' + ([...paths].join(', ') || 'none'));
+          "
+          while read -r icon; do
+            [ -n "$icon" ] || continue
+            unzip -l "$ZIP_NAME" | grep -qE " $icon$" || {
+              echo "::error::the manifest declares $icon but it is not in the archive"
+              exit 1
+            }
+          done < /tmp/icon-paths.txt
+
           unzip -p "$ZIP_NAME" src/sidepanel/index.html | grep -q "./assets/index-" || {
             echo "::error::the archived panel is not the compiled bundle"
             exit 1
           }
 
-          # localization must be all-or-nothing
           HAS_LOCALES=$(unzip -l "$ZIP_NAME" | grep -c "_locales/en/messages.json" || true)
           HAS_DEFAULT=$(node -p "require('./manifest.json').default_locale ? 1 : 0")
           if [ "$HAS_LOCALES" -eq 0 ] || [ "$HAS_DEFAULT" -eq 0 ]; then
-            echo "::error::localization is half-configured: _locales/en/messages.json present=$HAS_LOCALES, default_locale set=$HAS_DEFAULT"
+            echo "::error::localization is half-configured"
             exit 1
           fi
 
-          # every __MSG_ placeholder in the manifest must resolve in the default locale
           unzip -p "$ZIP_NAME" manifest.json > /tmp/archived-manifest.json
           unzip -p "$ZIP_NAME" _locales/en/messages.json > /tmp/archived-messages.json
           node -e "
@@ -183,7 +245,7 @@ jobs:
           - Commit: $SHORT
           - Asset: $ZIP_NAME
 
-          The archive matches the layout of the last build that installed successfully: manifest.json at the root, panel at src/sidepanel/index.html, _locales shipped alongside default_locale. Select this zip directly on the browser's extension page."
+          The archive matches the layout of the last build that installed successfully: manifest.json at the root, panel at src/sidepanel/index.html, _locales shipped alongside default_locale, UnQ icons included. Select this zip directly on the browser's extension page."
 
           if gh release view latest >/dev/null 2>&1; then
             gh release edit latest --title "UnQ Automation $VERSION" --notes "$NOTES"
