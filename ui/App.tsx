@@ -37,7 +37,8 @@ import { ASPECT_RATIOS, DEFAULTS, MODES } from "../src/core/storage.js"
 import { buildJobs, parseAny } from "../src/core/prompts.js"
 
 type Settings = Record<string, any>
-type Item = { index: number; text: string; status: string; tone: "neutral" | "accent" | "amber" | "rose" }
+type Tone = "neutral" | "accent" | "amber" | "rose"
+type Item = { index: number; text: string; status: string; tone: Tone }
 
 const MODE_ICON: Record<string, typeof Film> = {
 	t2v: Film,
@@ -82,13 +83,17 @@ export function App() {
 	/* ---------------- boot + detection ---------------- */
 
 	const detect = useCallback(async () => {
-		const tab = await activeTab()
-		if (!tab?.id) return
-		setTabId(tab.id)
-		const reply = await ping(tab.id)
+		const current = await activeTab()
+		if (!current?.id) return
+		setTabId(current.id)
+		const reply = await ping(current.id)
 		if (reply?.ok) {
 			setConnected(true)
-			setPlatform({ id: reply.adapter!, label: reply.label!, modes: reply.modes || [] })
+			setPlatform({
+				id: String(reply.adapter),
+				label: String(reply.label),
+				modes: reply.modes || [],
+			})
 			setRunning(!!reply.running)
 		} else {
 			setConnected(false)
@@ -115,11 +120,9 @@ export function App() {
 	useEffect(
 		() =>
 			onRunEvent(({ event, payload }) => {
-				const setStatus = (status: string, tone: Item["tone"]) =>
+				const setStatus = (status: string, tone: Tone) =>
 					setItems((current) =>
-						current.map((item) =>
-							item.index === payload.index ? { ...item, status, tone } : item,
-						),
+						current.map((item) => (item.index === payload.index ? { ...item, status, tone } : item)),
 					)
 
 				if (event === "item:submitting") setStatus("submitting", "amber")
@@ -129,7 +132,11 @@ export function App() {
 				if (event === "item:done") setStatus("done", "accent")
 				if (event === "item:retry") setStatus(`retry ${payload.attempt ?? ""}`, "amber")
 				if (event === "item:failed") setStatus(payload.error || "failed", "rose")
-				if (event === "run:error") setItems((current) => current.map((item) => ({ ...item, status: payload.error || "run error", tone: "rose" })))
+				if (event === "run:error") {
+					setItems((current) =>
+						current.map((item) => ({ ...item, status: payload.error || "run error", tone: "rose" })),
+					)
+				}
 				if (event === "run:paused") setPaused(true)
 				if (event === "run:resumed") setPaused(false)
 				if (event === "run:finished" || event === "run:stopped" || event === "run:aborted") {
@@ -142,9 +149,9 @@ export function App() {
 
 	/* ---------------- derived ---------------- */
 
-	const rows = useMemo(() => parseAny(settings.lastPrompts || ""), [settings.lastPrompts])
+	const rows = useMemo(() => parseAny(settings.lastPrompts || "") as any[], [settings.lastPrompts])
 	const modes = useMemo(
-		() => MODES.filter((mode: any) => !platform || platform.modes.includes(mode.id)),
+		() => (MODES as any[]).filter((mode) => !platform || platform.modes.includes(mode.value)),
 		[platform],
 	)
 	const done = items.filter((item) => item.tone === "accent").length
@@ -172,7 +179,9 @@ export function App() {
 		}) as Array<{ index: number; text: string }>
 
 		if (!jobs.length) return
-		setItems(jobs.map((job) => ({ index: job.index, text: job.text, status: "queued", tone: "neutral" })))
+		setItems(
+			jobs.map((job) => ({ index: job.index, text: job.text, status: "queued", tone: "neutral" as Tone })),
+		)
 		setRunning(true)
 
 		await startRun(tabId, jobs, {
@@ -185,18 +194,24 @@ export function App() {
 		})
 	}
 
+	const logText = logs.length
+		? logs
+				.map((entry) => `[${new Date(entry.at).toLocaleTimeString()}] ${entry.level} ${entry.line}`)
+				.join("\n")
+		: "No logs yet. Start a run to see activity here."
+
 	/* ---------------- screens ---------------- */
 
 	const controlTab = (
 		<div className="animate-enter space-y-2.5">
 			<div className="grid grid-cols-2 gap-2">
-				{modes.map((mode: any) => {
-					const Icon = MODE_ICON[mode.id] || Wand2
-					const active = settings.mode === mode.id
+				{modes.map((mode) => {
+					const Icon = MODE_ICON[mode.value] || Wand2
+					const active = settings.mode === mode.value
 					return (
 						<button
-							key={mode.id}
-							onClick={() => patch({ mode: mode.id })}
+							key={mode.value}
+							onClick={() => patch({ mode: mode.value })}
 							className={`sheen flex items-center gap-2.5 rounded-[var(--radius-card)] border p-3 text-left text-[11.5px] font-semibold transition ${
 								active
 									? "border-accent/40 bg-accent/10 text-ink"
@@ -294,7 +309,9 @@ export function App() {
 				</div>
 
 				<p className="tnum mt-2 text-[11px] text-ink-2">
-					{items.length ? `${done} done · ${failed} failed · ${items.length} total` : "Nothing queued yet."}
+					{items.length
+						? `${done} done · ${failed} failed · ${items.length} total`
+						: "Nothing queued yet."}
 				</p>
 
 				<div className="mt-1 max-h-[280px] overflow-auto">
@@ -328,8 +345,12 @@ export function App() {
 				<Select
 					value={settings.aspectRatio}
 					onChange={(value) => patch({ aspectRatio: value })}
-					options={ASPECT_RATIOS.map((ratio: any) => ({ value: ratio.id, label: ratio.label }))}
+					options={(ASPECT_RATIOS as any[]).map((ratio) => ({
+						value: ratio.value,
+						label: ratio.label,
+					}))}
 				/>
+				<div className="mt-3" />
 				<Label>Video duration</Label>
 				<Select
 					value={settings.videoOption}
@@ -348,6 +369,7 @@ export function App() {
 					value={settings.maxRetries}
 					onChange={(event) => patch({ maxRetries: Number(event.target.value) })}
 				/>
+				<div className="mt-3" />
 				<Label>Per-item timeout (seconds)</Label>
 				<Input
 					type="number"
@@ -357,15 +379,26 @@ export function App() {
 			</Card>
 
 			<Card>
-				<Label>Download quality</Label>
+				<Label>Video download quality</Label>
 				<Select
 					value={settings.downloadQualityVideo}
 					onChange={(value) => patch({ downloadQualityVideo: value })}
 					options={[
-						{ value: "none", label: "Video: no download" },
-						{ value: "720p", label: "Video: 720p" },
-						{ value: "1080p", label: "Video: 1080p" },
-						{ value: "4k", label: "Video: 4K" },
+						{ value: "none", label: "No download" },
+						{ value: "720p", label: "720p" },
+						{ value: "1080p", label: "1080p (paid plan may be required)" },
+						{ value: "4k", label: "4K (paid plan may be required)" },
+					]}
+				/>
+				<div className="mt-3" />
+				<Label>Image download quality</Label>
+				<Select
+					value={settings.downloadQualityImage}
+					onChange={(value) => patch({ downloadQualityImage: value })}
+					options={[
+						{ value: "none", label: "No download" },
+						{ value: "1k", label: "1k" },
+						{ value: "4k", label: "4k (paid plan may be required)" },
 					]}
 				/>
 				<div className="mt-3">
@@ -387,7 +420,7 @@ export function App() {
 					/>
 					<Toggle
 						title="Auto-detect page elements"
-						description="Finds the composer and send button when selectors change."
+						description="Finds the composer and send button when a site changes its markup."
 						checked={!!settings.autoDetectSelectors}
 						onChange={(value) => patch({ autoDetectSelectors: value })}
 					/>
@@ -407,16 +440,14 @@ export function App() {
 				<div className="mb-2.5 flex items-center justify-between">
 					<Badge>{logs.length} entries</Badge>
 					<div className="flex gap-1.5">
-						<Button onClick={() => tabId && ping(tabId, true).then((reply) => console.log(reply?.probe))}>
+						<Button
+							onClick={() => {
+								if (tabId) ping(tabId, true).then((reply) => console.log(reply?.probe))
+							}}
+						>
 							Probe
 						</Button>
-						<Button
-							onClick={() =>
-								navigator.clipboard.writeText(
-									logs.map((entry) => `[${new Date(entry.at).toLocaleTimeString()}] ${entry.level} ${entry.line}`).join("\n"),
-								)
-							}
-						>
+						<Button onClick={() => navigator.clipboard.writeText(logText)}>
 							<Copy size={12} /> Copy
 						</Button>
 						<Button onClick={() => clearLogs().then(() => setLogs([]))}>
@@ -429,11 +460,7 @@ export function App() {
 					className="m-0 max-h-[420px] overflow-auto rounded-[var(--radius-control)] border border-hairline bg-canvas p-2.5 text-[10.5px] leading-[1.7] whitespace-pre-wrap break-words text-ink-2"
 					style={{ fontFamily: "var(--font-mono)" }}
 				>
-					{logs.length
-						? logs
-								.map((entry) => `[${new Date(entry.at).toLocaleTimeString()}] ${entry.level} ${entry.line}`)
-								.join("\n")
-						: "No logs yet. Start a run to see activity here."}
+					{logText}
 				</pre>
 			</Card>
 		</div>
@@ -448,21 +475,17 @@ export function App() {
 
 			<div className="relative px-3.5">
 				<header className="sticky top-0 z-10 bg-canvas/85 pb-2.5 pt-4 backdrop-blur-xl">
-					<div className="flex items-center justify-between">
-						<div className="flex items-center gap-2">
-							<span className="grid h-6 w-6 place-items-center rounded-[7px] bg-gradient-to-b from-accent to-accent-2 text-[11px] font-black text-accent-ink">
-								U
-							</span>
-							<h1 className="m-0 text-[14.5px] font-bold tracking-[-0.02em]">UnQ Automation</h1>
-							<Badge tone="accent">v0.5</Badge>
-						</div>
+					<div className="flex items-center gap-2">
+						<span className="grid h-6 w-6 place-items-center rounded-[7px] bg-gradient-to-b from-accent to-accent-2 text-[11px] font-black text-accent-ink">
+							U
+						</span>
+						<h1 className="m-0 text-[14.5px] font-bold tracking-[-0.02em]">UnQ Automation</h1>
+						<Badge tone="accent">v0.5</Badge>
 					</div>
 
 					<div className="mt-2.5 inline-flex items-center gap-2 rounded-full border border-hairline bg-surface px-2.5 py-1 text-[11px] text-ink-3">
 						<span
-							className={`h-1.5 w-1.5 rounded-full ${
-								connected ? "animate-breathe bg-accent" : "bg-ink-3"
-							}`}
+							className={`h-1.5 w-1.5 rounded-full ${connected ? "animate-breathe bg-accent" : "bg-ink-3"}`}
 						/>
 						{platform ? (
 							<span>

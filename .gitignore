@@ -1,7 +1,8 @@
 node_modules/
-dist/
-*.zip
-*.crx
-*.pem
 .DS_Store
+*.log
 .env
+.vite/
+
+# dist/ is intentionally committed: it is built by CI and loaded directly as the
+# unpacked extension.
