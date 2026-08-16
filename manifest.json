@@ -2,9 +2,8 @@
   "manifest_version": 3,
   "name": "UnQ Automation — Bulk AI Image & Video Studio",
   "short_name": "UnQ Automation",
-  "version": "0.2.0",
-  "default_locale": "en",
-  "description": "__MSG_extDescription__",
+  "version": "0.5.0",
+  "description": "Queue prompts once and let UnQ generate, rename, and download images and videos in bulk across Meta AI, Google Flow, Grok, Gemini, ChatGPT, and Qwen.",
   "permissions": [
     "storage",
     "unlimitedStorage",
@@ -32,7 +31,7 @@
     "default_title": "UnQ Automation"
   },
   "side_panel": {
-    "default_path": "src/sidepanel/index.html"
+    "default_path": "dist/sidepanel/index.html"
   },
   "content_scripts": [
     {
