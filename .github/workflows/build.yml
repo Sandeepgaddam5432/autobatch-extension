@@ -2,14 +2,16 @@ name: Build side panel
 
 # CI is the build machine: the maintainer cannot run Node locally.
 #
-# Two rules keep installs working on browsers that install an extension by
+# Three rules keep installs working on browsers that install an extension by
 # picking a zip file directly:
 #
 # 1. manifest.json must sit at the archive ROOT. GitHub's "Download ZIP" button
 #    nests everything under <repo>-main/, which such loaders reject.
-# 2. The manifest must not reference paths that a loader may treat as unusual.
-#    The panel therefore stays at src/sidepanel/index.html - the exact path that
-#    loaded successfully before - and CI writes the compiled bundle there.
+# 2. The manifest keeps the panel at src/sidepanel/index.html - the exact path
+#    that loaded successfully before - and CI writes the compiled bundle there.
+# 3. The asset filename carries the version and commit. A fixed filename on a
+#    rolling tag gets served from the browser's download cache, which makes an
+#    old build look like the new one.
 
 on:
   push:
@@ -62,11 +64,25 @@ jobs:
           rm -rf dist
           ls -R src/sidepanel
 
+      - name: Fail if the panel is not the compiled bundle
+        run: |
+          # the compiled entry loads a hashed asset; the old hand-written panel
+          # loaded panel.js. This guards against shipping the superseded UI.
+          grep -q "./assets/index-" src/sidepanel/index.html || {
+            echo "::error::src/sidepanel/index.html is not the compiled bundle"
+            cat src/sidepanel/index.html
+            exit 1
+          }
+          if [ -f src/sidepanel/panel.js ]; then
+            echo "::error::the superseded panel.js is still present"
+            exit 1
+          fi
+
       - name: Commit build output
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A src/sidepanel dist 2>/dev/null || git add -A src/sidepanel
+          git add -A src/sidepanel
           if git diff --cached --quiet; then
             echo "No build changes."
           else
@@ -74,9 +90,17 @@ jobs:
             git push
           fi
 
+      - name: Resolve build identity
+        run: |
+          VERSION=$(node -p "require('./manifest.json').version")
+          SHORT=$(git rev-parse --short HEAD)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "SHORT=$SHORT" >> "$GITHUB_ENV"
+          echo "ZIP_NAME=unq-automation-$VERSION-$SHORT.zip" >> "$GITHUB_ENV"
+
       - name: Package install-ready zip
         run: |
-          rm -rf package unq-automation.zip
+          rm -rf package ./*.zip
           mkdir -p package
 
           # runtime files only, manifest at the archive root
@@ -87,47 +111,75 @@ jobs:
           [ -f selectors.example.json ] && cp selectors.example.json package/
 
           cd package
-          zip -r ../unq-automation.zip . -x "*.DS_Store"
+          zip -r "../$ZIP_NAME" . -x "*.DS_Store"
           cd ..
-          unzip -l unq-automation.zip
+          unzip -l "$ZIP_NAME"
 
       - name: Verify the archive layout
         run: |
           # manifest at the root
-          unzip -l unq-automation.zip | grep -qE " manifest\\.json$" || {
+          unzip -l "$ZIP_NAME" | grep -qE " manifest\\.json$" || {
             echo "::error::manifest.json is not at the archive root"
             exit 1
           }
 
           # every manifest-referenced entry point is present
           for path in src/sidepanel/index.html src/background.js src/content/content.js; do
-            unzip -l unq-automation.zip | grep -qE " $path$" || {
+            unzip -l "$ZIP_NAME" | grep -qE " $path$" || {
               echo "::error::$path is missing from the archive"
               exit 1
             }
           done
 
-          # the panel's own asset references resolve inside the archive
-          unzip -p unq-automation.zip src/sidepanel/index.html
+          # the archived panel is the compiled one
+          unzip -p "$ZIP_NAME" src/sidepanel/index.html | grep -q "./assets/index-" || {
+            echo "::error::the archived panel is not the compiled bundle"
+            exit 1
+          }
+
+          unzip -p "$ZIP_NAME" manifest.json | node -e "
+            let raw = '';
+            process.stdin.on('data', (chunk) => (raw += chunk));
+            process.stdin.on('end', () => {
+              const manifest = JSON.parse(raw);
+              if (manifest.version !== process.env.VERSION) {
+                console.error('::error::archived manifest version mismatch');
+                process.exit(1);
+              }
+              console.log('archived manifest version', manifest.version);
+            });
+          "
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: unq-automation-zip
-          path: unq-automation.zip
+          path: ${{ env.ZIP_NAME }}
 
-      - name: Publish latest release
+      - name: Publish releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(node -p "require('./manifest.json').version")
-          NOTES="Install-ready build. manifest.json is at the archive root and the side panel stays at src/sidepanel/index.html, so the zip can be selected directly in the browser's extension page. Version ${VERSION}, commit ${GITHUB_SHA}."
+          NOTES="Install-ready build.
 
+          - Extension version: $VERSION
+          - Commit: $SHORT
+          - Asset: $ZIP_NAME
+
+          manifest.json is at the archive root and the side panel is the compiled React bundle at src/sidepanel/index.html, so this zip can be selected directly on the browser's extension page. The filename changes every build, so a cached download can never be mistaken for the newest one."
+
+          # rolling pointer for convenience
           if gh release view latest >/dev/null 2>&1; then
-            gh release edit latest --title "UnQ Automation ${VERSION}" --notes "$NOTES"
-            gh release upload latest unq-automation.zip --clobber
+            gh release edit latest --title "UnQ Automation $VERSION" --notes "$NOTES"
           else
-            gh release create latest unq-automation.zip \
-              --title "UnQ Automation ${VERSION}" \
-              --notes "$NOTES"
+            gh release create latest --title "UnQ Automation $VERSION" --notes "$NOTES"
+          fi
+          gh release upload latest "$ZIP_NAME" --clobber
+
+          # immutable, versioned release
+          TAG="v$VERSION-$SHORT"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP_NAME" --clobber
+          else
+            gh release create "$TAG" "$ZIP_NAME" --title "UnQ Automation $VERSION ($SHORT)" --notes "$NOTES"
           fi
