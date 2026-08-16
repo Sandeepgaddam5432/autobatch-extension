@@ -60,6 +60,13 @@ type Tone = "neutral" | "accent" | "amber" | "rose"
 type Item = { index: number; text: string; status: string; tone: Tone }
 type Img = { name: string; dataUrl: string; size: number }
 type Row = { text: string; image?: string; aspectRatio?: string; mode?: string; outputsPerPrompt?: number }
+type PlatformOption = {
+	key: string
+	label: string
+	hint?: string
+	values: Array<{ value: string; label: string }>
+}
+type Platform = { id: string; label: string; modes: string[]; options: PlatformOption[] }
 
 const REPO = "https://github.com/Sandeepgaddam5432/autobatch-extension"
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -70,6 +77,7 @@ const IMAGE_MODES = ["f2v", "ing2v", "i2i", "i2v"]
 const MODE_ICON: Record<string, typeof Film> = {
 	t2v: Film,
 	f2v: ImageIcon,
+	i2v: ImageIcon,
 	ing2v: Layers,
 	t2i: Images,
 	i2i: ImageIcon,
@@ -106,7 +114,7 @@ export function App() {
 	const [settings, setSettings] = useState<Settings>(DEFAULTS)
 	const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("control")
 	const [tabId, setTabId] = useState<number | null>(null)
-	const [platform, setPlatform] = useState<{ id: string; label: string; modes: string[] } | null>(null)
+	const [platform, setPlatform] = useState<Platform | null>(null)
 	const [connected, setConnected] = useState<boolean | null>(null)
 	const [items, setItems] = useState<Item[]>([])
 	const [running, setRunning] = useState(false)
@@ -142,7 +150,7 @@ export function App() {
 
 	const flash = useCallback((message: string) => {
 		setNotice(message)
-		window.setTimeout(() => setNotice(""), 2600)
+		window.setTimeout(() => setNotice(""), 4000)
 	}, [])
 
 	/* ---------------- boot + detection ---------------- */
@@ -151,10 +159,15 @@ export function App() {
 		const current = await activeTab()
 		if (!current?.id) return
 		setTabId(current.id)
-		const reply = await ping(current.id)
+		const reply = (await ping(current.id)) as any
 		if (reply?.ok) {
 			setConnected(true)
-			setPlatform({ id: String(reply.adapter), label: String(reply.label), modes: reply.modes || [] })
+			setPlatform({
+				id: String(reply.adapter),
+				label: String(reply.label),
+				modes: reply.modes || [],
+				options: reply.options || [],
+			})
 			setRunning(!!reply.running)
 		} else {
 			setConnected(false)
@@ -202,6 +215,12 @@ export function App() {
 						current.map((item) => ({ ...item, status: payload.error || "run error", tone: "rose" })),
 					)
 				}
+				// say out loud which page dropdowns could not be set
+				if (event === "run:options") {
+					if (payload.missed?.length) flash(`Page did not offer → ${payload.missed.join(", ")}`)
+					else if (payload.applied?.length) flash(`Set on page → ${payload.applied.join(", ")}`)
+				}
+				if (event === "run:warning") flash(String(payload.warning || ""))
 				if (event === "run:blocked") flash(`Waiting: ${payload.reason}`)
 				if (event === "run:paused") setPaused(true)
 				if (event === "run:resumed") setPaused(false)
@@ -231,6 +250,21 @@ export function App() {
 	const failed = items.filter((item) => item.tone === "rose").length
 	const active = items.filter((item) => item.tone === "amber").length
 	const progress = items.length ? Math.round(((done + failed) / items.length) * 100) : 0
+
+	const chosenOptions: Record<string, string> = useMemo(
+		() => (settings.platformOptions || {})[platform?.id || ""] || {},
+		[settings.platformOptions, platform],
+	)
+
+	const patchOption = (key: string, value: string) => {
+		if (!platform) return
+		patch({
+			platformOptions: {
+				...(settings.platformOptions || {}),
+				[platform.id]: { ...chosenOptions, [key]: value },
+			},
+		})
+	}
 
 	const variableError = useMemo(() => {
 		try {
@@ -359,6 +393,35 @@ export function App() {
 
 	/* ---------------- control tab ---------------- */
 
+	const platformOptionsCard = platform?.options?.length ? (
+		<Card>
+			<div className="mb-1 flex items-center justify-between">
+				<span className="text-[10.5px] font-bold tracking-[0.09em] text-ink-3">
+					{platform.label.toUpperCase()} CONTROLS
+				</span>
+				<Badge tone="accent">{platform.options.length}</Badge>
+			</div>
+			{platform.options.map((option) => (
+				<div key={option.key} className="mt-3">
+					<Label>{option.label}</Label>
+					<Select
+						value={chosenOptions[option.key] || "auto"}
+						onChange={(value) => patchOption(option.key, value)}
+						options={[
+							{ value: "auto", label: "Leave as the page has it" },
+							...option.values.map((choice) => ({ value: choice.value, label: choice.label })),
+						]}
+					/>
+					{option.hint ? <Hint>{option.hint}</Hint> : null}
+				</div>
+			))}
+			<Hint>
+				Set once when a run starts. Anything this page does not offer is named in a message instead of being
+				silently skipped.
+			</Hint>
+		</Card>
+	) : null
+
 	const dropzone = (
 		<Card>
 			<Label>Input images</Label>
@@ -415,7 +478,7 @@ export function App() {
 				</>
 			) : null}
 
-			{settings.mode === "f2v" ? (
+			{settings.mode === "f2v" || settings.mode === "i2v" ? (
 				<div className="mt-3">
 					<Label>Image processing option</Label>
 					<Select
@@ -494,6 +557,7 @@ export function App() {
 				})}
 			</div>
 
+			{platformOptionsCard}
 			{needsImages ? dropzone : null}
 
 			<div className="grid grid-cols-2 gap-2.5">
@@ -640,10 +704,7 @@ export function App() {
 			<Card>
 				<button onClick={() => setQueueOpen((open) => !open)} className="flex w-full items-center justify-between">
 					<span className="flex items-center gap-1.5 text-[10.5px] font-bold tracking-[0.09em] text-ink-3">
-						<ChevronDown
-							size={12}
-							className={`transition-transform ${queueOpen ? "" : "-rotate-90"}`}
-						/>
+						<ChevronDown size={12} className={`transition-transform ${queueOpen ? "" : "-rotate-90"}`} />
 						PROMPT QUEUE
 					</span>
 					<Badge tone={active ? "amber" : "neutral"}>{active} active</Badge>
@@ -727,6 +788,7 @@ export function App() {
 						{ value: "last", label: "Last image" },
 					]}
 				/>
+				<Hint>Platform-specific choices such as the Veo model live in the Control tab.</Hint>
 			</Card>
 
 			<Card>
@@ -840,9 +902,7 @@ export function App() {
 					value={settings.filenameTemplate}
 					onChange={(event) => patch({ filenameTemplate: event.target.value })}
 				/>
-				<Hint>
-					Tokens: {"{n} {index} {slot} {slug} {date} {time} {mode} {ratio} {platform} {ext}"}
-				</Hint>
+				<Hint>Tokens: {"{n} {index} {slot} {slug} {date} {time} {mode} {ratio} {platform} {ext}"}</Hint>
 				<div className="mt-3">
 					<Toggle
 						title="Auto download results"
@@ -1045,9 +1105,7 @@ export function App() {
 						))}
 					</div>
 				) : (
-					<p className="m-0 text-[11.5px] text-ink-3">
-						Nothing saved yet. Finished downloads are recorded here.
-					</p>
+					<p className="m-0 text-[11.5px] text-ink-3">Nothing saved yet. Finished downloads are recorded here.</p>
 				)}
 			</Card>
 		</div>
@@ -1077,9 +1135,7 @@ export function App() {
 							<ExternalLink size={13} />
 						</a>
 					</div>
-					<p className="m-0 mt-1 text-[10.5px] text-ink-3">
-						Batch prompt automation for AI image and video pages.
-					</p>
+					<p className="m-0 mt-1 text-[10.5px] text-ink-3">Batch prompt automation for AI image and video pages.</p>
 
 					<div className="mt-2.5 inline-flex items-center gap-2 rounded-full border border-hairline bg-surface px-2.5 py-1 text-[11px] text-ink-3">
 						<span className={`h-1.5 w-1.5 rounded-full ${connected ? "animate-breathe bg-accent" : "bg-ink-3"}`} />
@@ -1120,7 +1176,7 @@ export function App() {
 			</div>
 
 			{notice ? (
-				<div className="animate-enter fixed bottom-[78px] left-1/2 z-30 max-w-[300px] -translate-x-1/2 rounded-full border border-hairline bg-elevated px-3 py-1.5 text-center text-[10.5px] text-ink-2 shadow-xl">
+				<div className="animate-enter fixed bottom-[78px] left-1/2 z-30 max-w-[300px] -translate-x-1/2 rounded-xl border border-hairline bg-elevated px-3 py-1.5 text-center text-[10.5px] leading-relaxed text-ink-2 shadow-xl">
 					{notice}
 				</div>
 			) : null}
@@ -1163,12 +1219,7 @@ export function App() {
 						</>
 					) : null}
 
-					<Button
-						variant="primary"
-						className="ml-auto min-w-[104px]"
-						disabled={running || !!blocker}
-						onClick={run}
-					>
+					<Button variant="primary" className="ml-auto min-w-[104px]" disabled={running || !!blocker} onClick={run}>
 						<Play size={13} /> {running ? "Running…" : `Run ${rows.length || ""}`}
 					</Button>
 				</div>
