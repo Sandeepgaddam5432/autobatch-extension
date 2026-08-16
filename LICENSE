@@ -1,21 +1,87 @@
-MIT License
+UnQ Automation — Proprietary Software License
 
-Copyright (c) 2026 Sandeepgaddam5432
+Copyright (c) 2026 Sandeep Gaddam. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This software, including its source code, compiled output, design, user
+interface, adapter logic, selector data, documentation and all related assets
+(collectively, the "Software"), is the exclusive property of the copyright
+holder and is protected by copyright law and international treaties.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+The Software is NOT open source. No licence, right, title or interest is
+granted to any person or entity by publication of this repository, by the
+GitHub Terms of Service, by implication, by estoppel, or otherwise, except as
+expressly stated below.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+1. PERMITTED USE
+
+   An individual end user may download an official release archive published by
+   the copyright holder and install it in their own browser for their own
+   personal, non-commercial use. That is the only permission granted.
+
+2. PROHIBITED WITHOUT PRIOR WRITTEN PERMISSION
+
+   All of the following are expressly prohibited:
+
+   a. copying, reproducing or storing the source code, in whole or in part,
+      for any purpose other than the personal installation described above;
+   b. modifying, adapting, translating or creating derivative works;
+   c. redistributing, publishing, sublicensing, renting, leasing, selling or
+      otherwise making the Software or any part of it available to any third
+      party, whether free of charge or for a fee;
+   d. publishing the Software or any derivative of it to the Chrome Web Store,
+      the Microsoft Edge Add-ons store, Firefox Add-ons, or any other software
+      distribution channel;
+   e. incorporating any portion of the Software into another product, service,
+      extension, library or codebase, including commercial and open-source
+      projects;
+   f. using the Software, or knowledge derived from reading it, to build a
+      competing or substantially similar product;
+   g. removing, obscuring or altering any copyright, authorship, licence or
+      attribution notice;
+   h. using the name "UnQ", "UnQ Automation", or any confusingly similar name,
+      logo or branding, for any purpose.
+
+3. NO TRADEMARK LICENCE
+
+   The names, logos and branding associated with the Software are trademarks of
+   the copyright holder. Nothing in this licence grants any right to use them.
+
+4. VIEWING AND FORKING ON GITHUB
+
+   The GitHub Terms of Service permit other GitHub users to view and to fork
+   this repository through GitHub's own interface. That platform-level ability
+   does NOT grant any licence to use, run, modify, publish or distribute the
+   Software. Any use beyond viewing on GitHub requires the copyright holder's
+   prior written permission.
+
+5. NO CONTRIBUTIONS
+
+   Unsolicited pull requests are not accepted. Any material submitted to this
+   repository is deemed assigned to the copyright holder.
+
+6. TERMINATION
+
+   The permission in section 1 terminates automatically and immediately upon
+   any breach of this licence. Upon termination all copies must be deleted.
+
+7. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+8. LIMITATION OF LIABILITY
+
+   IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR
+   OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+   ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+   DEALINGS IN THE SOFTWARE.
+
+9. ENFORCEMENT
+
+   The copyright holder reserves all remedies available at law and in equity,
+   including injunctive relief, statutory damages, and takedown procedures
+   under the Digital Millennium Copyright Act and equivalent legislation in
+   other jurisdictions.
+
+For licensing enquiries, contact the copyright holder.
