@@ -2,9 +2,15 @@
   "manifest_version": 3,
   "name": "UnQ Automation — Bulk AI Image & Video Studio",
   "short_name": "UnQ Automation",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "default_locale": "en",
   "description": "__MSG_extDescription__",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "permissions": [
     "storage",
     "unlimitedStorage",
@@ -29,7 +35,13 @@
     "type": "module"
   },
   "action": {
-    "default_title": "UnQ Automation"
+    "default_title": "UnQ Automation",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "side_panel": {
     "default_path": "src/sidepanel/index.html"
