@@ -2,20 +2,18 @@ name: Build side panel
 
 # CI is the build machine: the maintainer cannot run Node locally.
 #
-# Rules that keep installs working on browsers that install an extension by
-# picking a zip file directly:
+# The archive must match the shape of the last build that installed successfully
+# on the target browser (an Android browser that installs an extension by
+# selecting a zip file):
 #
-# 1. manifest.json must sit at the archive ROOT. GitHub's "Download ZIP" button
+# 1. manifest.json sits at the archive ROOT. GitHub's "Download ZIP" button
 #    nests everything under <repo>-main/, which such loaders reject.
-# 2. The manifest keeps the panel at src/sidepanel/index.html - the exact path
-#    that loaded successfully before - and CI writes the compiled bundle there.
-# 3. The asset filename carries the version and commit. A fixed filename on a
-#    rolling tag gets served from the browser's download cache, which makes an
-#    old build look like the new one.
-# 4. A _locales directory must never ship without "default_locale" in the
-#    manifest. Chromium then fails the install outright with "Localization used,
-#    but default_locale wasn't specified in the manifest." The panel ships its
-#    own in-UI language selector, so the archive carries no _locales at all.
+# 2. The panel stays at src/sidepanel/index.html - the path that loaded before.
+#    CI writes the compiled bundle there.
+# 3. Localization is all-or-nothing. _locales ships AND manifest declares
+#    default_locale. Either one alone makes Chromium refuse the install.
+# 4. The asset filename carries version and commit, so a cached download can
+#    never be mistaken for a newer build.
 
 on:
   push:
@@ -70,8 +68,6 @@ jobs:
 
       - name: Fail if the panel is not the compiled bundle
         run: |
-          # the compiled entry loads a hashed asset; the old hand-written panel
-          # loaded panel.js. This guards against shipping the superseded UI.
           grep -q "./assets/index-" src/sidepanel/index.html || {
             echo "::error::src/sidepanel/index.html is not the compiled bundle"
             cat src/sidepanel/index.html
@@ -107,10 +103,10 @@ jobs:
           rm -rf package ./*.zip
           mkdir -p package
 
-          # runtime files only, manifest at the archive root.
-          # _locales is deliberately NOT copied: see rule 4 above.
+          # runtime files only, manifest at the archive root
           cp manifest.json package/
           cp -r src package/
+          cp -r _locales package/
           [ -d icons ] && cp -r icons package/
           [ -f selectors.example.json ] && cp selectors.example.json package/
 
@@ -141,35 +137,34 @@ jobs:
             exit 1
           }
 
-          # localization must be complete or absent, never half-configured
-          HAS_LOCALES=$(unzip -l "$ZIP_NAME" | grep -c "_locales/" || true)
+          # localization must be all-or-nothing
+          HAS_LOCALES=$(unzip -l "$ZIP_NAME" | grep -c "_locales/en/messages.json" || true)
           HAS_DEFAULT=$(node -p "require('./manifest.json').default_locale ? 1 : 0")
-          if [ "$HAS_LOCALES" -gt 0 ] && [ "$HAS_DEFAULT" -eq 0 ]; then
-            echo "::error::_locales ships without default_locale, so Chromium will refuse to load the extension"
-            exit 1
-          fi
-          if [ "$HAS_LOCALES" -eq 0 ] && [ "$HAS_DEFAULT" -eq 1 ]; then
-            echo "::error::default_locale is set but no _locales directory ships"
+          if [ "$HAS_LOCALES" -eq 0 ] || [ "$HAS_DEFAULT" -eq 0 ]; then
+            echo "::error::localization is half-configured: _locales/en/messages.json present=$HAS_LOCALES, default_locale set=$HAS_DEFAULT"
             exit 1
           fi
 
-          # no __MSG_ placeholder can survive without localization
-          if [ "$HAS_LOCALES" -eq 0 ] && unzip -p "$ZIP_NAME" manifest.json | grep -q "__MSG_"; then
-            echo "::error::manifest uses __MSG_ placeholders but no _locales directory ships"
-            exit 1
-          fi
-
-          unzip -p "$ZIP_NAME" manifest.json | node -e "
-            let raw = '';
-            process.stdin.on('data', (chunk) => (raw += chunk));
-            process.stdin.on('end', () => {
-              const manifest = JSON.parse(raw);
-              if (manifest.version !== process.env.VERSION) {
-                console.error('::error::archived manifest version mismatch');
-                process.exit(1);
-              }
-              console.log('archived manifest version', manifest.version);
-            });
+          # every __MSG_ placeholder in the manifest must resolve in the default locale
+          unzip -p "$ZIP_NAME" manifest.json > /tmp/archived-manifest.json
+          unzip -p "$ZIP_NAME" _locales/en/messages.json > /tmp/archived-messages.json
+          node -e "
+            const fs = require('fs');
+            const raw = fs.readFileSync('/tmp/archived-manifest.json', 'utf8');
+            const manifest = JSON.parse(raw);
+            const messages = JSON.parse(fs.readFileSync('/tmp/archived-messages.json', 'utf8'));
+            if (manifest.version !== process.env.VERSION) {
+              console.error('::error::archived manifest version mismatch');
+              process.exit(1);
+            }
+            const missing = [...raw.matchAll(/__MSG_([A-Za-z0-9_]+)__/g)]
+              .map((match) => match[1])
+              .filter((key) => !messages[key] || !messages[key].message);
+            if (missing.length) {
+              console.error('::error::unresolved manifest placeholders: ' + missing.join(', '));
+              process.exit(1);
+            }
+            console.log('archived manifest', manifest.version, 'placeholders resolved');
           "
 
       - name: Upload workflow artifact
@@ -188,9 +183,8 @@ jobs:
           - Commit: $SHORT
           - Asset: $ZIP_NAME
 
-          manifest.json is at the archive root, the side panel is the compiled React bundle at src/sidepanel/index.html, and no _locales directory ships without default_locale. Select this zip directly on the browser's extension page. The filename changes every build, so a cached download can never be mistaken for the newest one."
+          The archive matches the layout of the last build that installed successfully: manifest.json at the root, panel at src/sidepanel/index.html, _locales shipped alongside default_locale. Select this zip directly on the browser's extension page."
 
-          # rolling pointer for convenience
           if gh release view latest >/dev/null 2>&1; then
             gh release edit latest --title "UnQ Automation $VERSION" --notes "$NOTES"
           else
@@ -198,7 +192,6 @@ jobs:
           fi
           gh release upload latest "$ZIP_NAME" --clobber
 
-          # immutable, versioned release
           TAG="v$VERSION-$SHORT"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ZIP_NAME" --clobber
