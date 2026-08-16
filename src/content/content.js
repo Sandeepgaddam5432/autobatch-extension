@@ -78,6 +78,8 @@
 					modes: adapter.modes,
 					aspectRatios: adapter.aspectRatios,
 					qualities: adapter.qualities,
+					// platform dropdowns the panel should render for this page
+					options: adapter.options || [],
 					running: !!runner && !runner.stopped,
 					probe: adapter.probe ? adapter.probe() : null,
 				})

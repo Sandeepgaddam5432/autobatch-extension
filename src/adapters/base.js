@@ -34,19 +34,28 @@ export function qsa(list, root = document) {
 
 export function clickByText(labels, extraSelectors = "") {
 	const base =
-		'button, div[role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="radio"], a, li'
+		'button, div[role="button"], [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="option"], [role="radio"], a, li'
 	const candidates = document.querySelectorAll(extraSelectors ? `${base}, ${extraSelectors}` : base)
 	for (const label of labels || []) {
 		const needle = String(label).toLowerCase()
 		for (const el of candidates) {
 			const text = (el.innerText || el.getAttribute("aria-label") || el.title || "").trim().toLowerCase()
-			if (text && text.length < 48 && text.includes(needle)) {
+			if (text && text.length < 60 && text.includes(needle)) {
 				el.click()
 				return true
 			}
 		}
 	}
 	return false
+}
+
+/** Closes a dropdown that stayed open after a choice was clicked. */
+function dismissMenus() {
+	for (const type of ["keydown", "keyup"]) {
+		document.body.dispatchEvent(
+			new KeyboardEvent(type, { key: "Escape", code: "Escape", keyCode: 27, which: 27, bubbles: true })
+		)
+	}
 }
 
 export function pressEnter(el) {
@@ -141,6 +150,9 @@ export function createAdapter(spec) {
 		host: spec.host,
 		modes: spec.modes || ["t2i"],
 		aspectRatios: spec.aspectRatios || [],
+		qualities: spec.qualities || [],
+		// platform-specific dropdowns (model, resolution, ...) shown in the panel
+		options: spec.options || [],
 		selectors: { ...spec.selectors },
 		modeLabels: spec.modeLabels || {},
 		ratioLabels: spec.ratioLabels || {},
@@ -224,6 +236,78 @@ export function createAdapter(spec) {
 			const ok = clickByText([ratio, ratio.replace(":", " : "), ...extra])
 			if (ok) await sleep(500)
 			return ok
+		},
+
+		/**
+		 * Picks one value inside a platform dropdown: open the control, click the
+		 * choice by its visible text, then close whatever stayed open.
+		 */
+		async setOption(option, value) {
+			if (!option || value === undefined || value === null || value === "" || value === "auto") return true
+			const choice = (option.values || []).find((item) => String(item.value) === String(value))
+			if (!choice) return false
+
+			let opened = false
+			if (option.opener) {
+				const opener = qs(option.opener)
+				if (opener) {
+					opener.click()
+					opened = true
+					await sleep(450)
+				}
+			}
+			if (!opened && option.openerLabels && option.openerLabels.length) {
+				opened = clickByText(option.openerLabels)
+				if (opened) await sleep(450)
+			}
+
+			// native <select> controls need a value change, not a click
+			if (option.select) {
+				const el = qs(option.select)
+				if (el && el.tagName === "SELECT") {
+					const match = [...el.options].find((native) =>
+						(choice.labels || [choice.label]).some((label) =>
+							native.textContent.toLowerCase().includes(String(label).toLowerCase())
+						)
+					)
+					if (match) {
+						el.value = match.value
+						el.dispatchEvent(new Event("change", { bubbles: true }))
+						await sleep(400)
+						return true
+					}
+				}
+			}
+
+			const ok = clickByText(choice.labels && choice.labels.length ? choice.labels : [choice.label])
+			await sleep(ok ? 600 : 200)
+			if (opened) dismissMenus()
+			return ok
+		},
+
+		/**
+		 * Applies every platform option the user picked, once, before the queue
+		 * starts. Missed options are returned so the panel can say so out loud
+		 * instead of pretending the run used them.
+		 */
+		async applyOptions(config) {
+			const chosen = ((config && config.platformOptions) || {})[this.id] || {}
+			const applied = []
+			const missed = []
+			for (const option of this.options || []) {
+				const value = chosen[option.key]
+				if (value === undefined || value === null || value === "" || value === "auto") continue
+				let ok = false
+				try {
+					ok = await this.setOption(option, value)
+				} catch (err) {
+					ok = false
+				}
+				const label = `${option.label}: ${value}`
+				if (ok) applied.push(label)
+				else missed.push(label)
+			}
+			return { applied, missed }
 		},
 
 		async attachImages(images) {

@@ -73,9 +73,19 @@ export class Runner {
 
 		try {
 			await this.adapter.isReady()
-			if (this.adapter.setMode) await this.adapter.setMode(config.mode)
+			if (this.adapter.setMode) {
+				const modeOk = await this.adapter.setMode(config.mode)
+				if (!modeOk) this.emit("run:warning", { warning: `could not switch the page to ${config.mode}` })
+			}
 			if (this.adapter.setAspectRatio && config.aspectRatio) {
 				await this.adapter.setAspectRatio(config.aspectRatio)
+			}
+			// platform dropdowns: model, resolution, video length, ...
+			if (this.adapter.applyOptions) {
+				const result = await this.adapter.applyOptions(config)
+				if (result && (result.applied.length || result.missed.length)) {
+					this.emit("run:options", result)
+				}
 			}
 		} catch (err) {
 			this.emit("run:error", { error: String((err && err.message) || err) })
