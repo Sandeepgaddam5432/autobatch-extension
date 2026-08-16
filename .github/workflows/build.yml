@@ -1,13 +1,15 @@
 name: Build side panel
 
-# The maintainer cannot run Node locally, so CI is the build machine. It compiles
-# the React panel, commits dist/sidepanel back to main, and publishes an
-# install-ready archive as a release asset.
+# CI is the build machine: the maintainer cannot run Node locally.
 #
-# Why the release asset matters: GitHub's "Download ZIP" button nests everything
-# inside autobatch-extension-main/, so manifest.json is not at the archive root
-# and mobile browsers that install extensions straight from a zip reject it. The
-# zip built here has manifest.json at the root.
+# Two rules keep installs working on browsers that install an extension by
+# picking a zip file directly:
+#
+# 1. manifest.json must sit at the archive ROOT. GitHub's "Download ZIP" button
+#    nests everything under <repo>-main/, which such loaders reject.
+# 2. The manifest must not reference paths that a loader may treat as unusual.
+#    The panel therefore stays at src/sidepanel/index.html - the exact path that
+#    loaded successfully before - and CI writes the compiled bundle there.
 
 on:
   push:
@@ -47,20 +49,24 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Verify output
+      - name: Move the compiled panel to src/sidepanel
         run: |
           test -f dist/sidepanel/index.html || {
-            echo "::error::dist/sidepanel/index.html missing"
+            echo "::error::vite did not emit dist/sidepanel/index.html"
             ls -R dist || true
             exit 1
           }
-          ls -R dist/sidepanel
+          rm -rf src/sidepanel
+          mkdir -p src/sidepanel
+          cp -r dist/sidepanel/. src/sidepanel/
+          rm -rf dist
+          ls -R src/sidepanel
 
       - name: Commit build output
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f dist/sidepanel
+          git add -A src/sidepanel dist 2>/dev/null || git add -A src/sidepanel
           if git diff --cached --quiet; then
             echo "No build changes."
           else
@@ -73,29 +79,36 @@ jobs:
           rm -rf package unq-automation.zip
           mkdir -p package
 
-          # runtime files only — manifest.json must sit at the archive root
+          # runtime files only, manifest at the archive root
           cp manifest.json package/
           cp -r src package/
-          cp -r dist package/
           [ -d _locales ] && cp -r _locales package/
           [ -d icons ] && cp -r icons package/
           [ -f selectors.example.json ] && cp selectors.example.json package/
 
-          # the source panel is superseded by the compiled one; drop the React
-          # sources and dev config so the archive stays small
-          rm -rf package/src/sidepanel
-
           cd package
           zip -r ../unq-automation.zip . -x "*.DS_Store"
           cd ..
-          unzip -l unq-automation.zip | head -40
+          unzip -l unq-automation.zip
 
-      - name: Verify manifest is at the zip root
+      - name: Verify the archive layout
         run: |
+          # manifest at the root
           unzip -l unq-automation.zip | grep -qE " manifest\\.json$" || {
             echo "::error::manifest.json is not at the archive root"
             exit 1
           }
+
+          # every manifest-referenced entry point is present
+          for path in src/sidepanel/index.html src/background.js src/content/content.js; do
+            unzip -l unq-automation.zip | grep -qE " $path$" || {
+              echo "::error::$path is missing from the archive"
+              exit 1
+            }
+          done
+
+          # the panel's own asset references resolve inside the archive
+          unzip -p unq-automation.zip src/sidepanel/index.html
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
@@ -108,7 +121,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION=$(node -p "require('./manifest.json').version")
-          NOTES="Install-ready build. manifest.json sits at the archive root, so this zip can be installed directly. Extension version ${VERSION}, commit ${GITHUB_SHA}."
+          NOTES="Install-ready build. manifest.json is at the archive root and the side panel stays at src/sidepanel/index.html, so the zip can be selected directly in the browser's extension page. Version ${VERSION}, commit ${GITHUB_SHA}."
 
           if gh release view latest >/dev/null 2>&1; then
             gh release edit latest --title "UnQ Automation ${VERSION}" --notes "$NOTES"
