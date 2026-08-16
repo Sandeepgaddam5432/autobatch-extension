@@ -2,7 +2,7 @@ name: Build side panel
 
 # CI is the build machine: the maintainer cannot run Node locally.
 #
-# Three rules keep installs working on browsers that install an extension by
+# Rules that keep installs working on browsers that install an extension by
 # picking a zip file directly:
 #
 # 1. manifest.json must sit at the archive ROOT. GitHub's "Download ZIP" button
@@ -12,6 +12,10 @@ name: Build side panel
 # 3. The asset filename carries the version and commit. A fixed filename on a
 #    rolling tag gets served from the browser's download cache, which makes an
 #    old build look like the new one.
+# 4. A _locales directory must never ship without "default_locale" in the
+#    manifest. Chromium then fails the install outright with "Localization used,
+#    but default_locale wasn't specified in the manifest." The panel ships its
+#    own in-UI language selector, so the archive carries no _locales at all.
 
 on:
   push:
@@ -103,10 +107,10 @@ jobs:
           rm -rf package ./*.zip
           mkdir -p package
 
-          # runtime files only, manifest at the archive root
+          # runtime files only, manifest at the archive root.
+          # _locales is deliberately NOT copied: see rule 4 above.
           cp manifest.json package/
           cp -r src package/
-          [ -d _locales ] && cp -r _locales package/
           [ -d icons ] && cp -r icons package/
           [ -f selectors.example.json ] && cp selectors.example.json package/
 
@@ -137,6 +141,24 @@ jobs:
             exit 1
           }
 
+          # localization must be complete or absent, never half-configured
+          HAS_LOCALES=$(unzip -l "$ZIP_NAME" | grep -c "_locales/" || true)
+          HAS_DEFAULT=$(node -p "require('./manifest.json').default_locale ? 1 : 0")
+          if [ "$HAS_LOCALES" -gt 0 ] && [ "$HAS_DEFAULT" -eq 0 ]; then
+            echo "::error::_locales ships without default_locale, so Chromium will refuse to load the extension"
+            exit 1
+          fi
+          if [ "$HAS_LOCALES" -eq 0 ] && [ "$HAS_DEFAULT" -eq 1 ]; then
+            echo "::error::default_locale is set but no _locales directory ships"
+            exit 1
+          fi
+
+          # no __MSG_ placeholder can survive without localization
+          if [ "$HAS_LOCALES" -eq 0 ] && unzip -p "$ZIP_NAME" manifest.json | grep -q "__MSG_"; then
+            echo "::error::manifest uses __MSG_ placeholders but no _locales directory ships"
+            exit 1
+          fi
+
           unzip -p "$ZIP_NAME" manifest.json | node -e "
             let raw = '';
             process.stdin.on('data', (chunk) => (raw += chunk));
@@ -166,7 +188,7 @@ jobs:
           - Commit: $SHORT
           - Asset: $ZIP_NAME
 
-          manifest.json is at the archive root and the side panel is the compiled React bundle at src/sidepanel/index.html, so this zip can be selected directly on the browser's extension page. The filename changes every build, so a cached download can never be mistaken for the newest one."
+          manifest.json is at the archive root, the side panel is the compiled React bundle at src/sidepanel/index.html, and no _locales directory ships without default_locale. Select this zip directly on the browser's extension page. The filename changes every build, so a cached download can never be mistaken for the newest one."
 
           # rolling pointer for convenience
           if gh release view latest >/dev/null 2>&1; then
