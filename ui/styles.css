@@ -3,36 +3,36 @@
 /* =========================================================================
    Design tokens.
 
-   The previous panel looked cheap for three fixable reasons: emoji icons,
-   saturated accent used on large fills, and no consistent scale. This system
-   fixes all three — one restrained accent used on small surfaces only, a 4px
-   spacing grid, a tight type scale, and hairline translucent borders instead
-   of solid grey lines. That combination is what reads as "premium".
+   One restrained accent used on small surfaces only, a 4px spacing grid, a
+   tight type scale, and hairline translucent borders instead of solid grey
+   lines. v0.9.0 deepens the canvas, adds a faint aurora behind the panel,
+   rounds the radii slightly, and gives controls tactile press feedback —
+   the combination that reads as "premium" without turning into neon.
    ========================================================================= */
 
 @theme {
-	--color-canvas: #08090a;
-	--color-surface: #0f1113;
-	--color-surface-2: #16191d;
-	--color-elevated: #1c2025;
+	--color-canvas: #060709;
+	--color-surface: #0e1013;
+	--color-surface-2: #15181c;
+	--color-elevated: #1c2026;
 
-	--color-hairline: rgba(255, 255, 255, 0.07);
-	--color-hairline-strong: rgba(255, 255, 255, 0.13);
+	--color-hairline: rgba(255, 255, 255, 0.08);
+	--color-hairline-strong: rgba(255, 255, 255, 0.15);
 
-	--color-ink: #f4f6f8;
-	--color-ink-2: #b9c1cb;
-	--color-ink-3: #7d8792;
+	--color-ink: #f5f7f9;
+	--color-ink-2: #bac2cc;
+	--color-ink-3: #7f8994;
 
-	/* single accent, deliberately desaturated vs the old neon mint */
-	--color-accent: #3ee8a8;
-	--color-accent-2: #17c98c;
+	/* single accent, deliberately desaturated vs neon mint */
+	--color-accent: #3ce9a9;
+	--color-accent-2: #15c98b;
 	--color-accent-ink: #04231a;
 
-	--color-amber: #f0b23c;
-	--color-rose: #f2555a;
+	--color-amber: #f2b743;
+	--color-rose: #f4575d;
 
-	--radius-card: 12px;
-	--radius-control: 9px;
+	--radius-card: 14px;
+	--radius-control: 10px;
 
 	--font-sans: "Inter var", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
 		sans-serif;
@@ -48,7 +48,11 @@
 
 	body {
 		margin: 0;
-		background: var(--color-canvas);
+		background:
+			radial-gradient(1100px 460px at 50% -8%, rgba(60, 233, 169, 0.055), transparent 62%),
+			radial-gradient(900px 520px at 110% 112%, rgba(60, 233, 169, 0.03), transparent 55%),
+			var(--color-canvas);
+		background-attachment: fixed;
 		color: var(--color-ink);
 		font-family: var(--font-sans);
 		font-size: 13px;
@@ -56,6 +60,10 @@
 		-webkit-font-smoothing: antialiased;
 		text-rendering: optimizeLegibility;
 		font-feature-settings: "cv11", "ss01";
+	}
+
+	::selection {
+		background: color-mix(in oklab, var(--color-accent) 28%, transparent);
 	}
 
 	/* numbers must not jitter while a run updates counters */
@@ -79,6 +87,10 @@
 		border-radius: 99px;
 	}
 
+	::-webkit-scrollbar-thumb:hover {
+		background: rgba(255, 255, 255, 0.24);
+	}
+
 	::-webkit-scrollbar-track {
 		background: transparent;
 	}
@@ -87,7 +99,7 @@
 @layer utilities {
 	/* one subtle top highlight is enough to imply a lit surface */
 	.sheen {
-		background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 42%);
+		background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 42%);
 	}
 
 	.grain::after {
@@ -124,12 +136,12 @@
 	@keyframes enter {
 		from {
 			opacity: 0;
-			transform: translateY(4px);
+			transform: translateY(5px) scale(0.996);
 		}
 	}
 
 	.animate-enter {
-		animation: enter 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+		animation: enter 0.26s cubic-bezier(0.16, 1, 0.3, 1);
 	}
 }
 

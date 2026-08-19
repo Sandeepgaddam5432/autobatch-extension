@@ -9,6 +9,7 @@ export const ASPECT_RATIOS = [
 export const MODES = [
 	{ value: "t2v", label: "Text to Video", needsImages: false },
 	{ value: "f2v", label: "Frame to Video", needsImages: true },
+	{ value: "i2v", label: "Image to Video", needsImages: true },
 	{ value: "ing2v", label: "Ingredients to Video", needsImages: true },
 	{ value: "t2i", label: "Text to Image", needsImages: false },
 	{ value: "i2i", label: "Image to Image", needsImages: true },
