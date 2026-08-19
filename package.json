@@ -2,9 +2,9 @@
 	"name": "unq-automation",
 	"version": "0.9.0",
 	"private": true,
-	"license": "SEE LICENSE IN LICENSE",
+	"license": "MIT",
 	"author": "Sandeep Gaddam",
-	"description": "UnQ Automation — batch automation for AI image & video generators. Proprietary, all rights reserved.",
+	"description": "UnQ Automation — batch automation for AI image & video generators. Open source under the MIT License.",
 	"type": "module",
 	"scripts": {
 		"dev": "vite build --watch",
