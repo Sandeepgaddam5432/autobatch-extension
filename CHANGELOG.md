@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.9.0 — Production hardening
+
+- **Live toolbar badge** — the extension icon now mirrors run progress: a green count of finished items, amber once something has failed, and a ✓ or failure count flashed for 12 s when the run ends
+- **New mode: Image to Video (i2v)** — the Qwen adapter always supported it, but the shared mode list didn't include it, so the button never appeared in the panel
+- **Real notification icon** — completion notifications use the UnQ logo instead of a 1×1 placeholder pixel
+- **Version sync** — manifest.json and package.json now agree (previously 0.8.2 vs 0.8.1)
+- **Install guard** — `minimum_chrome_version: 114` (the Side Panel API floor), so unsupported Chromium builds refuse the install instead of breaking at runtime
+- **Modern UI pass** — aurora canvas backdrop, larger radii (14/10), crisper hairlines, layered card shadows with hover borders, tactile button press feedback, gradient toggle switches, and accent focus borders on inputs
+
 ## v0.2.0 — UnQ Automation
 
 - **Rebranded** from AutoBatch to **UnQ Automation**

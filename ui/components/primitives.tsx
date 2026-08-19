@@ -12,7 +12,7 @@ export function Card({
 }) {
 	return (
 		<div
-			className={`sheen rounded-[var(--radius-card)] border border-hairline bg-surface p-3.5 ${className}`}
+			className={`sheen rounded-[var(--radius-card)] border border-hairline bg-surface p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.35),0_10px_28px_-18px_rgba(0,0,0,0.7)] transition-colors duration-200 hover:border-hairline-strong ${className}`}
 		>
 			{children}
 		</div>
@@ -43,11 +43,11 @@ export function Button({
 	className?: string
 }) {
 	const base =
-		"inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] px-3 py-2 text-[11.5px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-45"
+		"inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] px-3 py-2 text-[11.5px] font-semibold transition duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100"
 	const styles = {
 		// accent is a small, bright surface — never a full-width neon slab
 		primary:
-			"bg-gradient-to-b from-accent to-accent-2 text-accent-ink shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_6px_18px_-8px_rgba(62,232,168,0.6)] hover:brightness-110 active:brightness-95",
+			"bg-gradient-to-b from-accent to-accent-2 text-accent-ink shadow-[0_1px_0_rgba(255,255,255,0.28)_inset,0_8px_22px_-10px_rgba(60,233,169,0.65)] hover:brightness-110 active:brightness-95",
 		ghost:
 			"border border-hairline bg-surface-2 text-ink-2 hover:border-hairline-strong hover:text-ink",
 		danger: "border border-rose/40 text-rose hover:bg-rose/10",
@@ -63,7 +63,7 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
 	return (
 		<input
 			{...props}
-			className={`w-full rounded-[var(--radius-control)] border border-hairline bg-canvas px-2.5 py-2 text-[12.5px] text-ink placeholder:text-ink-3 transition hover:border-hairline-strong ${props.className || ""}`}
+			className={`w-full rounded-[var(--radius-control)] border border-hairline bg-canvas px-2.5 py-2 text-[12.5px] text-ink placeholder:text-ink-3 transition hover:border-hairline-strong focus:border-accent/40 ${props.className || ""}`}
 		/>
 	)
 }
@@ -72,7 +72,7 @@ export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
 	return (
 		<textarea
 			{...props}
-			className={`w-full resize-y rounded-[var(--radius-control)] border border-hairline bg-canvas px-2.5 py-2 text-[12.5px] leading-relaxed text-ink placeholder:text-ink-3 transition hover:border-hairline-strong ${props.className || ""}`}
+			className={`w-full resize-y rounded-[var(--radius-control)] border border-hairline bg-canvas px-2.5 py-2 text-[12.5px] leading-relaxed text-ink placeholder:text-ink-3 transition hover:border-hairline-strong focus:border-accent/40 ${props.className || ""}`}
 		/>
 	)
 }
@@ -91,7 +91,7 @@ export function Select({
 			<select
 				value={value}
 				onChange={(event) => onChange(event.target.value)}
-				className="w-full appearance-none rounded-[var(--radius-control)] border border-hairline bg-canvas px-2.5 py-2 pr-8 text-[12.5px] text-ink transition hover:border-hairline-strong"
+				className="w-full appearance-none rounded-[var(--radius-control)] border border-hairline bg-canvas px-2.5 py-2 pr-8 text-[12.5px] text-ink transition hover:border-hairline-strong focus:border-accent/40"
 			>
 				{options.map((option) => (
 					<option key={option.value} value={option.value}>
@@ -131,7 +131,9 @@ export function Toggle({
 				aria-checked={checked}
 				onClick={() => onChange(!checked)}
 				className={`relative h-[21px] w-[38px] shrink-0 rounded-full transition ${
-					checked ? "bg-accent" : "bg-elevated"
+					checked
+						? "bg-gradient-to-b from-accent to-accent-2 shadow-[0_4px_12px_-4px_rgba(60,233,169,0.5)]"
+						: "bg-elevated"
 				}`}
 			>
 				<span
